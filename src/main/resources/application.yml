@@ -1,0 +1,24 @@
+spring:
+  application:
+    name: onfilm-encoding-worker
+  kafka:
+    consumer:
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+
+app:
+  worker:
+    topic: media.encode.requested
+    group-id: onfilm-encoding-worker
+    ffmpeg-path: ffmpeg
+    ffprobe-path: ffprobe
+    working-dir: /tmp/onfilm-encoding-worker
+  storage:
+    region: ap-northeast-2
+  core-api:
+    base-url: http://localhost:8080
+    media-jobs-path: /internal/api/media-jobs/{jobId}
+    movies-path: /internal/api/movies/{movieId}/media
+    trailers-path: /internal/api/trailers/{jobId}/media
+    auth-token: change-me
