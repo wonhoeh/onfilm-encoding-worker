@@ -59,7 +59,11 @@ public class CoreApiClient {
                 case TRAILER -> restClient.patch()
                         .uri(properties.coreApi().trailersPath(), jobId)
                         .contentType(MediaType.APPLICATION_JSON)
+<<<<<<< HEAD
                         .body(Map.of("movieId", movieId, "videoUrl", targetKey))
+=======
+                        .body(Map.of("trailerUrl", targetKey))
+>>>>>>> a4d4e61 (feat: 로컬에서 인코딩 테스트할 수 있는 환경 구성 및 문서 작업)
                         .retrieve()
                         .toBodilessEntity();
             }

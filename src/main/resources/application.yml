@@ -8,6 +8,7 @@ spring:
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
 
 app:
+<<<<<<< HEAD
   worker:
     topic: media.encode.requested
     group-id: onfilm-encoding-worker
@@ -22,3 +23,9 @@ app:
     movies-path: /internal/api/movies/{movieId}/media
     trailers-path: /internal/api/trailers/{jobId}/media
     auth-token: change-me
+=======
+  core-api:
+    media-jobs-path: /internal/api/media-jobs/{jobId}
+    movies-path: /internal/api/movies/{movieId}/media
+    trailers-path: /internal/api/trailers/{jobId}/media
+>>>>>>> a4d4e61 (feat: 로컬에서 인코딩 테스트할 수 있는 환경 구성 및 문서 작업)

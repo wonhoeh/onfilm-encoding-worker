@@ -1,0 +1,20 @@
+server:
+  port: 8081
+
+spring:
+  kafka:
+    bootstrap-servers: localhost:9092
+
+app:
+  worker:
+    topic: media.encode.requested
+    group-id: onfilm-encoding-worker
+    ffmpeg-path: ffmpeg
+    ffprobe-path: ffprobe
+    working-dir: /Users/whheo/desktop/onfilm/tmp/encoding-worker
+  storage:
+    type: local
+    local-root: /Users/whheo/Desktop/onfilm/local-storage
+  core-api:
+    base-url: http://localhost:8080
+    auth-token: change-me

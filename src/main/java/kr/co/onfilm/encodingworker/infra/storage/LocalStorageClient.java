@@ -3,53 +3,33 @@ package kr.co.onfilm.encodingworker.infra.storage;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.List;
+import kr.co.onfilm.encodingworker.config.AppProperties;
 import lombok.RequiredArgsConstructor;
-<<<<<<< HEAD
-=======
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
->>>>>>> a4d4e61 (feat: 로컬에서 인코딩 테스트할 수 있는 환경 구성 및 문서 작업)
 import org.springframework.stereotype.Component;
-import software.amazon.awssdk.core.sync.RequestBody;
-import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.GetObjectRequest;
-import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
 @Component
-<<<<<<< HEAD
+@ConditionalOnProperty(prefix = "app.storage", name = "type", havingValue = "local")
 @RequiredArgsConstructor
-public class S3StorageClient {
+public class LocalStorageClient implements StorageClient {
 
-    private final S3Client s3Client;
-
-=======
-@ConditionalOnProperty(prefix = "app.storage", name = "type", havingValue = "s3")
-@RequiredArgsConstructor
-public class S3StorageClient implements StorageClient {
-
-    private final S3Client s3Client;
+    private final AppProperties properties;
 
     @Override
->>>>>>> a4d4e61 (feat: 로컬에서 인코딩 테스트할 수 있는 환경 구성 및 문서 작업)
     public Path download(String bucket, String key, Path destination) {
+        Path source = resolvePath(bucket, key);
         try {
             Files.createDirectories(destination.getParent());
-            s3Client.getObject(GetObjectRequest.builder()
-                    .bucket(bucket)
-                    .key(key)
-                    .build(), destination);
+            Files.copy(source, destination, StandardCopyOption.REPLACE_EXISTING);
             return destination;
         } catch (IOException exception) {
-            throw new StorageException("Failed to prepare download path for " + key, exception);
-        } catch (RuntimeException exception) {
-            throw new StorageException("Failed to download s3://" + bucket + "/" + key, exception);
+            throw new StorageException("Failed to copy local source " + source, exception);
         }
     }
 
-<<<<<<< HEAD
-=======
     @Override
->>>>>>> a4d4e61 (feat: 로컬에서 인코딩 테스트할 수 있는 환경 구성 및 문서 작업)
     public void uploadFiles(String bucket, String targetKey, List<Path> files, String contentType) {
         Path localBaseDir = localBaseDir(files);
         String targetBaseKey = targetBaseKey(targetKey);
@@ -58,14 +38,22 @@ public class S3StorageClient implements StorageClient {
             String objectKey = relative.toString().isBlank()
                     ? targetKey
                     : appendKey(targetBaseKey, relative);
-            String resolvedContentType = ContentTypes.resolve(file, contentType);
-            s3Client.putObject(PutObjectRequest.builder()
-                            .bucket(bucket)
-                            .key(objectKey)
-                            .contentType(resolvedContentType)
-                            .build(),
-                    RequestBody.fromFile(file));
+            Path destination = resolvePath(bucket, objectKey);
+            try {
+                Files.createDirectories(destination.getParent());
+                Files.copy(file, destination, StandardCopyOption.REPLACE_EXISTING);
+            } catch (IOException exception) {
+                throw new StorageException("Failed to copy local output to " + destination, exception);
+            }
         }
+    }
+
+    private Path resolvePath(String bucket, String key) {
+        String localRoot = properties.storage().localRoot();
+        if (localRoot == null || localRoot.isBlank()) {
+            throw new StorageException("app.storage.local-root must be configured when app.storage.type=local");
+        }
+        return Path.of(localRoot).resolve(bucket).resolve(key);
     }
 
     private Path localBaseDir(List<Path> files) {
