@@ -5,10 +5,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
-<<<<<<< HEAD
-=======
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
->>>>>>> a4d4e61 (feat: 로컬에서 인코딩 테스트할 수 있는 환경 구성 및 문서 작업)
 import org.springframework.stereotype.Component;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
@@ -16,13 +13,6 @@ import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
 @Component
-<<<<<<< HEAD
-@RequiredArgsConstructor
-public class S3StorageClient {
-
-    private final S3Client s3Client;
-
-=======
 @ConditionalOnProperty(prefix = "app.storage", name = "type", havingValue = "s3")
 @RequiredArgsConstructor
 public class S3StorageClient implements StorageClient {
@@ -30,7 +20,6 @@ public class S3StorageClient implements StorageClient {
     private final S3Client s3Client;
 
     @Override
->>>>>>> a4d4e61 (feat: 로컬에서 인코딩 테스트할 수 있는 환경 구성 및 문서 작업)
     public Path download(String bucket, String key, Path destination) {
         try {
             Files.createDirectories(destination.getParent());
@@ -46,10 +35,7 @@ public class S3StorageClient implements StorageClient {
         }
     }
 
-<<<<<<< HEAD
-=======
     @Override
->>>>>>> a4d4e61 (feat: 로컬에서 인코딩 테스트할 수 있는 환경 구성 및 문서 작업)
     public void uploadFiles(String bucket, String targetKey, List<Path> files, String contentType) {
         Path localBaseDir = localBaseDir(files);
         String targetBaseKey = targetBaseKey(targetKey);

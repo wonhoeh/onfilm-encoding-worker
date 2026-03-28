@@ -25,13 +25,9 @@ public record AppProperties(
     }
 
     public record Storage(
-<<<<<<< HEAD
-            @NotBlank String region
-=======
             @NotBlank String type,
             String region,
             String localRoot
->>>>>>> a4d4e61 (feat: 로컬에서 인코딩 테스트할 수 있는 환경 구성 및 문서 작업)
     ) {
     }
 

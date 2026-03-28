@@ -48,16 +48,14 @@ class FfmpegCommandFactoryTest {
     private AppProperties properties() {
         return new AppProperties(
                 new AppProperties.Worker("media.encode.requested", "worker-group", "ffmpeg", "ffprobe", "/tmp"),
-<<<<<<< HEAD
-                new AppProperties.Storage("ap-northeast-2"),
-=======
                 new AppProperties.Storage("s3", "ap-northeast-2", null),
->>>>>>> a4d4e61 (feat: 로컬에서 인코딩 테스트할 수 있는 환경 구성 및 문서 작업)
-                new AppProperties.CoreApi(URI.create("http://localhost:8080"),
+                new AppProperties.CoreApi(
+                        URI.create("http://localhost:8080"),
                         "/internal/api/media-jobs/{jobId}",
                         "/internal/api/movies/{movieId}/media",
                         "/internal/api/trailers/{jobId}/media",
-                        "token")
+                        "token"
+                )
         );
     }
 }

@@ -3,12 +3,15 @@ package kr.co.onfilm.encodingworker.infra.coreapi;
 import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
+import kr.co.onfilm.encodingworker.application.JobAlreadyProcessingException;
 import kr.co.onfilm.encodingworker.config.AppProperties;
 import kr.co.onfilm.encodingworker.domain.EncodeJobType;
 import kr.co.onfilm.encodingworker.domain.MediaJobStatus;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
@@ -20,10 +23,24 @@ public class CoreApiClient {
     private final AppProperties properties;
 
     public void markProcessing(UUID jobId, Instant startedAt) {
-        patchJob(jobId, Map.of(
-                "status", MediaJobStatus.PROCESSING.name(),
-                "startedAt", startedAt.toString()
-        ));
+        try {
+            restClient.patch()
+                    .uri(properties.coreApi().mediaJobsPath(), jobId)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(Map.of(
+                            "status", MediaJobStatus.PROCESSING.name(),
+                            "startedAt", startedAt.toString()
+                    ))
+                    .retrieve()
+                    .toBodilessEntity();
+        } catch (HttpClientErrorException e) {
+            if (e.getStatusCode() == HttpStatus.CONFLICT) {
+                throw new JobAlreadyProcessingException(jobId);
+            }
+            throw new CoreApiException("Failed to update media job " + jobId, e);
+        } catch (RestClientException e) {
+            throw new CoreApiException("Failed to update media job " + jobId, e);
+        }
     }
 
     public void markDone(UUID jobId, Instant completedAt) {
@@ -59,11 +76,7 @@ public class CoreApiClient {
                 case TRAILER -> restClient.patch()
                         .uri(properties.coreApi().trailersPath(), jobId)
                         .contentType(MediaType.APPLICATION_JSON)
-<<<<<<< HEAD
                         .body(Map.of("movieId", movieId, "videoUrl", targetKey))
-=======
-                        .body(Map.of("trailerUrl", targetKey))
->>>>>>> a4d4e61 (feat: 로컬에서 인코딩 테스트할 수 있는 환경 구성 및 문서 작업)
                         .retrieve()
                         .toBodilessEntity();
             }
