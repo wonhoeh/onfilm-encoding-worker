@@ -11,8 +11,13 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.kafka.support.converter.RecordMessageConverter;
 import org.springframework.kafka.support.converter.StringJsonMessageConverter;
 import org.springframework.web.client.RestClient;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
+import java.net.http.HttpClient;
+import kr.co.onfilm.encodingworker.infra.coreapi.InternalCallbackHmacInterceptor;
+import java.time.Clock;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration;
 
 @Configuration
 @EnableConfigurationProperties(AppProperties.class)
@@ -23,6 +28,10 @@ public class AppConfig {
     S3Client s3Client(AppProperties properties) {
         return S3Client.builder()
                 .region(Region.of(properties.storage().region()))
+                .overrideConfiguration(ClientOverrideConfiguration.builder()
+                        .apiCallTimeout(properties.storage().apiCallTimeout())
+                        .apiCallAttemptTimeout(properties.storage().apiCallAttemptTimeout())
+                        .build())
                 .build();
     }
 
@@ -47,11 +56,22 @@ public class AppConfig {
     }
 
     @Bean
-    RestClient restClient(AppProperties properties) {
+    RestClient restClient(AppProperties properties, InternalCallbackHmacInterceptor hmacInterceptor) {
+        HttpClient httpClient = HttpClient.newBuilder()
+                .connectTimeout(properties.coreApi().connectTimeout())
+                .build();
+        JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
+        requestFactory.setReadTimeout(properties.coreApi().readTimeout());
         return RestClient.builder()
                 .baseUrl(properties.coreApi().baseUrl().toString())
-                .defaultHeader("Authorization", "Bearer " + properties.coreApi().authToken())
+                .requestFactory(requestFactory)
+                .requestInterceptor(hmacInterceptor)
                 .build();
+    }
+
+    @Bean
+    Clock clock() {
+        return Clock.systemUTC();
     }
 
     @Bean

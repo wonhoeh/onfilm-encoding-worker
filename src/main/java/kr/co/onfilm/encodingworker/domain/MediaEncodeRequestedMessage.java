@@ -3,21 +3,27 @@ package kr.co.onfilm.encodingworker.domain;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.Size;
 import java.time.Instant;
 import java.util.UUID;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record MediaEncodeRequestedMessage(
+        int schemaVersion,
         @NotNull UUID jobId,
-        @NotNull Long movieId,
-        @NotNull Long requestedByUserId,
+        @NotNull UUID requestId,
+        @NotNull @Positive Long movieId,
+        @NotNull @Positive Long requestedByUserId,
         @NotNull EncodeJobType jobType,
         @NotNull EncodeJobPreset preset,
-        @NotBlank String sourceBucket,
-        @NotBlank String sourceKey,
-        @NotBlank String targetBucket,
-        @NotBlank String targetKey,
-        @NotBlank String contentType,
+        @NotBlank @Size(max = 63) String sourceBucket,
+        @NotBlank @Size(max = 512) String sourceKey,
+        @NotBlank @Size(max = 63) String targetBucket,
+        @NotBlank @Size(max = 512) String targetKey,
+        @NotBlank @Size(max = 128) String sourceContentType,
+        @NotBlank @Size(max = 128) String targetContentType,
         @NotNull Instant requestedAt
 ) {
+    public static final int CURRENT_SCHEMA_VERSION = 1;
 }

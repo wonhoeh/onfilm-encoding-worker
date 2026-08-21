@@ -7,6 +7,7 @@ import java.net.URI;
 import java.nio.file.Path;
 import java.util.List;
 import kr.co.onfilm.encodingworker.config.AppProperties;
+import kr.co.onfilm.encodingworker.TestProperties;
 import kr.co.onfilm.encodingworker.domain.EncodeJobPreset;
 import org.junit.jupiter.api.Test;
 
@@ -46,16 +47,6 @@ class FfmpegCommandFactoryTest {
     }
 
     private AppProperties properties() {
-        return new AppProperties(
-                new AppProperties.Worker("media.encode.requested", "worker-group", "ffmpeg", "ffprobe", "/tmp"),
-                new AppProperties.Storage("s3", "ap-northeast-2", null),
-                new AppProperties.CoreApi(
-                        URI.create("http://localhost:8080"),
-                        "/internal/api/media-jobs/{jobId}",
-                        "/internal/api/movies/{movieId}/media",
-                        "/internal/api/trailers/{jobId}/media",
-                        "token"
-                )
-        );
+        return TestProperties.create();
     }
 }

@@ -1,11 +1,31 @@
 spring:
   application:
     name: onfilm-encoding-worker
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+  task:
+    scheduling:
+      pool:
+        size: 2
   kafka:
     consumer:
       auto-offset-reset: earliest
+      enable-auto-commit: false
+      max-poll-records: 1
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      properties:
+        max.poll.interval.ms: 10800000
+    listener:
+      ack-mode: record
+  datasource:
+    url: ${WORKER_DB_URL:jdbc:h2:file:./data/encoding-worker-inbox;AUTO_SERVER=TRUE}
+    username: ${WORKER_DB_USER:sa}
+    password: ${WORKER_DB_PASSWORD:}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: update
 
 app:
   worker:
@@ -14,12 +34,38 @@ app:
     ffmpeg-path: ffmpeg
     ffprobe-path: ffprobe
     working-dir: /tmp/onfilm-encoding-worker
+    transcode-timeout: PT2H
+    processing-lease: PT3H
+    max-source-bytes: 10737418240
+    max-media-duration: PT6H
+    concurrency: 1
+    retry-attempts: 5
+    retry-delay-millis: 1000
+    retry-multiplier: 2
+    failure-report-delay: 60000
+    stale-recovery-delay: 60000
   storage:
     type: s3
     region: ap-northeast-2
+    allowed-buckets:
+      - ${MEDIA_STORAGE_BUCKET:onfilm-media}
+    api-call-timeout: PT10M
+    api-call-attempt-timeout: PT3M
   core-api:
     base-url: http://localhost:8080
-    media-jobs-path: /internal/api/media-jobs/{jobId}
-    movies-path: /internal/api/movies/{movieId}/media
-    trailers-path: /internal/api/trailers/{jobId}/media
-    auth-token: change-me
+    processing-path: /internal/api/media-jobs/{jobId}/processing
+    completion-path: /internal/api/media-jobs/{jobId}/complete
+    failure-path: /internal/api/media-jobs/{jobId}/fail
+    callback-secret: ${MEDIA_ENCODE_CALLBACK_SECRET}
+    connect-timeout: PT5S
+    read-timeout: PT30S
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true

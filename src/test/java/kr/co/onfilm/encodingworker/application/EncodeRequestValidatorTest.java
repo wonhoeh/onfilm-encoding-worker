@@ -1,59 +1,108 @@
 package kr.co.onfilm.encodingworker.application;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import jakarta.validation.Validation;
+import kr.co.onfilm.encodingworker.TestProperties;
+import kr.co.onfilm.encodingworker.domain.*;
+import org.junit.jupiter.api.*;
 
 import java.time.Instant;
 import java.util.UUID;
-import kr.co.onfilm.encodingworker.domain.EncodeJobPreset;
-import kr.co.onfilm.encodingworker.domain.EncodeJobType;
-import kr.co.onfilm.encodingworker.domain.MediaEncodeRequestedMessage;
-import org.junit.jupiter.api.Test;
+
+import static org.assertj.core.api.Assertions.*;
 
 class EncodeRequestValidatorTest {
+    private EncodeRequestValidator validator;
 
-    private final EncodeRequestValidator validator = new EncodeRequestValidator();
-
-    @Test
-    void acceptsMovieHlsRequest() {
-        assertDoesNotThrow(() -> validator.validate(message(
-                EncodeJobType.MOVIE,
-                EncodeJobPreset.VIDEO_HLS_720P_2500K_AAC_96K,
-                "movie/123/file/550e8400-e29b-41d4-a716-446655440000/index.m3u8"
-        )));
+    @BeforeEach
+    void setUp() {
+        validator = new EncodeRequestValidator(
+                TestProperties.create(),
+                Validation.buildDefaultValidatorFactory().getValidator());
     }
 
     @Test
-    void rejectsInvalidPresetForTrailer() {
-        assertThrows(IllegalArgumentException.class, () -> validator.validate(message(
-                EncodeJobType.TRAILER,
-                EncodeJobPreset.THUMBNAIL_1280X720,
-                "movie/123/trailer/550e8400-e29b-41d4-a716-446655440000/index.m3u8"
-        )));
+    void acceptsServerV1MovieMessage() {
+        MediaEncodeRequestedMessage message = message(EncodeJobType.MOVIE,
+                EncodeJobPreset.VIDEO_HLS_720P_2500K_AAC_96K);
+        assertThatCode(() -> validator.validate(message.jobId().toString(), message))
+                .doesNotThrowAnyException();
     }
 
     @Test
-    void rejectsInvalidThumbnailTargetKey() {
-        assertThrows(IllegalArgumentException.class, () -> validator.validate(message(
-                EncodeJobType.THUMBNAIL,
-                EncodeJobPreset.THUMBNAIL_1280X720,
-                "movie/123/thumbnail/550e8400-e29b-41d4-a716-446655440000/index.m3u8"
-        )));
+    void rejectsUnsupportedSchemaAndKafkaKeyMismatch() {
+        MediaEncodeRequestedMessage valid = message(EncodeJobType.MOVIE,
+                EncodeJobPreset.VIDEO_HLS_720P_2500K_AAC_96K);
+        MediaEncodeRequestedMessage unsupported = copy(valid, 2, valid.sourceKey());
+
+        assertThatThrownBy(() -> validator.validate(valid.jobId().toString(), unsupported))
+                .isInstanceOf(PermanentEncodingException.class)
+                .extracting("failureCode").isEqualTo(FailureCode.UNSUPPORTED_MESSAGE_SCHEMA);
+        assertThatThrownBy(() -> validator.validate(UUID.randomUUID().toString(), valid))
+                .isInstanceOf(PermanentEncodingException.class);
     }
 
-    private MediaEncodeRequestedMessage message(EncodeJobType type, EncodeJobPreset preset, String targetKey) {
+    @Test
+    void rejectsSourceKeyThatDoesNotContainRequestIdAndTraversal() {
+        MediaEncodeRequestedMessage valid = message(EncodeJobType.MOVIE,
+                EncodeJobPreset.VIDEO_HLS_720P_2500K_AAC_96K);
+        assertThatThrownBy(() -> validator.validate(valid.jobId().toString(),
+                copy(valid, 1, "movie/123/raw/file/../source.mp4")))
+                .isInstanceOf(PermanentEncodingException.class);
+    }
+
+    @Test
+    void rejectsPresetAndContentTypeMismatch() {
+        MediaEncodeRequestedMessage thumbnail = message(
+                EncodeJobType.THUMBNAIL, EncodeJobPreset.VIDEO_HLS_720P_2500K_AAC_96K);
+        assertThatThrownBy(() -> validator.validate(thumbnail.jobId().toString(), thumbnail))
+                .isInstanceOf(PermanentEncodingException.class);
+    }
+
+    @Test
+    void rejectsTargetWithoutGeneratedUuid() {
+        MediaEncodeRequestedMessage valid = message(EncodeJobType.MOVIE,
+                EncodeJobPreset.VIDEO_HLS_720P_2500K_AAC_96K);
+        MediaEncodeRequestedMessage invalid = copyTarget(
+                valid, "movie/123/file/not-a-uuid/index.m3u8");
+
+        assertThatThrownBy(() -> validator.validate(valid.jobId().toString(), invalid))
+                .isInstanceOf(PermanentEncodingException.class);
+    }
+
+    private MediaEncodeRequestedMessage message(EncodeJobType type, EncodeJobPreset preset) {
+        UUID jobId = UUID.randomUUID();
+        UUID requestId = UUID.randomUUID();
+        String mediaType = switch (type) {
+            case MOVIE -> "file";
+            case TRAILER -> "trailer";
+            case THUMBNAIL -> "thumbnail";
+        };
+        String target = type == EncodeJobType.THUMBNAIL
+                ? "movie/123/thumbnail/" + UUID.randomUUID() + ".jpg"
+                : "movie/123/" + mediaType + "/" + UUID.randomUUID() + "/index.m3u8";
         return new MediaEncodeRequestedMessage(
-                UUID.randomUUID(),
-                123L,
-                45L,
-                type,
-                preset,
-                "bucket",
-                "movie/123/raw/file/source.mp4",
-                "bucket",
-                targetKey,
-                "video/mp4",
-                Instant.parse("2026-03-15T00:00:00Z")
-        );
+                1, jobId, requestId, 123L, 45L, type, preset,
+                "bucket", "movie/123/raw/" + mediaType + "/" + requestId + ".mp4",
+                "bucket", target,
+                type == EncodeJobType.THUMBNAIL ? "image/jpeg" : "video/mp4",
+                type == EncodeJobType.THUMBNAIL ? "image/jpeg" : "application/vnd.apple.mpegurl",
+                Instant.parse("2026-03-15T00:00:00Z"));
+    }
+
+    private MediaEncodeRequestedMessage copyTarget(MediaEncodeRequestedMessage source, String targetKey) {
+        return new MediaEncodeRequestedMessage(
+                source.schemaVersion(), source.jobId(), source.requestId(), source.movieId(),
+                source.requestedByUserId(), source.jobType(), source.preset(),
+                source.sourceBucket(), source.sourceKey(), source.targetBucket(), targetKey,
+                source.sourceContentType(), source.targetContentType(), source.requestedAt());
+    }
+
+    private MediaEncodeRequestedMessage copy(MediaEncodeRequestedMessage source,
+                                               int schemaVersion, String sourceKey) {
+        return new MediaEncodeRequestedMessage(
+                schemaVersion, source.jobId(), source.requestId(), source.movieId(),
+                source.requestedByUserId(), source.jobType(), source.preset(),
+                source.sourceBucket(), sourceKey, source.targetBucket(), source.targetKey(),
+                source.sourceContentType(), source.targetContentType(), source.requestedAt());
     }
 }

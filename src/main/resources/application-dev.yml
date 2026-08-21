@@ -2,6 +2,13 @@ server:
   port: 8081
 
 spring:
+  datasource:
+    url: jdbc:h2:mem:encoding-worker;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
   kafka:
     bootstrap-servers: localhost:9092
 
@@ -11,10 +18,11 @@ app:
     group-id: onfilm-encoding-worker
     ffmpeg-path: ffmpeg
     ffprobe-path: ffprobe
-    working-dir: /Users/whheo/desktop/onfilm/tmp/encoding-worker
+    working-dir: ${WORKER_WORKING_DIR:./tmp/encoding-worker}
   storage:
     type: local
-    local-root: /Users/whheo/Desktop/onfilm/local-storage
+    local-root: ${LOCAL_STORAGE_ROOT:./local-storage}
+    allowed-buckets:
+      - onfilm-media
   core-api:
     base-url: http://localhost:8080
-    auth-token: change-me

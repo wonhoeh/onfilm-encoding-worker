@@ -4,6 +4,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 public interface StorageClient {
+    StorageObjectMetadata metadata(String bucket, String key);
 
     Path download(String bucket, String key, Path destination);
 
