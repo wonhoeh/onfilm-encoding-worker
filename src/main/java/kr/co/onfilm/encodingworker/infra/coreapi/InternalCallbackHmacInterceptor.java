@@ -1,6 +1,7 @@
 package kr.co.onfilm.encodingworker.infra.coreapi;
 
 import kr.co.onfilm.encodingworker.config.AppProperties;
+import kr.co.onfilm.encodingworker.observability.CorrelationIdContext;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpRequest;
 import org.springframework.http.client.*;
@@ -33,6 +34,10 @@ public class InternalCallbackHmacInterceptor implements ClientHttpRequestInterce
         request.getHeaders().set("X-Onfilm-Timestamp", Long.toString(timestamp));
         request.getHeaders().set("X-Onfilm-Nonce", nonce);
         request.getHeaders().set("X-Onfilm-Signature", hmac(canonical));
+        request.getHeaders().set(
+                CorrelationIdContext.HEADER_NAME,
+                CorrelationIdContext.currentOrCreate()
+        );
         return execution.execute(request, body);
     }
 

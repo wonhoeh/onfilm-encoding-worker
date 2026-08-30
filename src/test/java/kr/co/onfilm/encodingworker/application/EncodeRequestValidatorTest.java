@@ -81,7 +81,7 @@ class EncodeRequestValidatorTest {
                 ? "movie/123/thumbnail/" + UUID.randomUUID() + ".jpg"
                 : "movie/123/" + mediaType + "/" + UUID.randomUUID() + "/index.m3u8";
         return new MediaEncodeRequestedMessage(
-                1, jobId, requestId, 123L, 45L, type, preset,
+                1, jobId, requestId, "corr-123", 123L, 45L, type, preset,
                 "bucket", "movie/123/raw/" + mediaType + "/" + requestId + ".mp4",
                 "bucket", target,
                 type == EncodeJobType.THUMBNAIL ? "image/jpeg" : "video/mp4",
@@ -91,7 +91,7 @@ class EncodeRequestValidatorTest {
 
     private MediaEncodeRequestedMessage copyTarget(MediaEncodeRequestedMessage source, String targetKey) {
         return new MediaEncodeRequestedMessage(
-                source.schemaVersion(), source.jobId(), source.requestId(), source.movieId(),
+                source.schemaVersion(), source.jobId(), source.requestId(), source.correlationId(), source.movieId(),
                 source.requestedByUserId(), source.jobType(), source.preset(),
                 source.sourceBucket(), source.sourceKey(), source.targetBucket(), targetKey,
                 source.sourceContentType(), source.targetContentType(), source.requestedAt());
@@ -100,7 +100,7 @@ class EncodeRequestValidatorTest {
     private MediaEncodeRequestedMessage copy(MediaEncodeRequestedMessage source,
                                                int schemaVersion, String sourceKey) {
         return new MediaEncodeRequestedMessage(
-                schemaVersion, source.jobId(), source.requestId(), source.movieId(),
+                schemaVersion, source.jobId(), source.requestId(), source.correlationId(), source.movieId(),
                 source.requestedByUserId(), source.jobType(), source.preset(),
                 source.sourceBucket(), sourceKey, source.targetBucket(), source.targetKey(),
                 source.sourceContentType(), source.targetContentType(), source.requestedAt());

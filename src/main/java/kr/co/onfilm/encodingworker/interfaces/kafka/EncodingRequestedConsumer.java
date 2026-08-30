@@ -4,6 +4,7 @@ import kr.co.onfilm.encodingworker.application.EncodingJobProcessor;
 import kr.co.onfilm.encodingworker.application.FailureReportService;
 import kr.co.onfilm.encodingworker.application.PermanentEncodingException;
 import kr.co.onfilm.encodingworker.domain.MediaEncodeRequestedMessage;
+import kr.co.onfilm.encodingworker.observability.CorrelationIdContext;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.annotation.KafkaListener;
@@ -13,8 +14,11 @@ import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.kafka.annotation.DltHandler;
 import org.springframework.kafka.support.KafkaHeaders;
 import org.springframework.retry.annotation.Backoff;
+import org.slf4j.MDC;
 import org.springframework.stereotype.Component;
 import org.springframework.validation.annotation.Validated;
+
+import static net.logstash.logback.argument.StructuredArguments.kv;
 
 @Slf4j
 @Validated
@@ -43,18 +47,19 @@ public class EncodingRequestedConsumer {
             @Header(KafkaHeaders.RECEIVED_KEY) String kafkaKey,
             @Payload MediaEncodeRequestedMessage message
     ) {
-        log.info(
-                "Consumed encode job. jobId={}, movieId={}, type={}, preset={}, source={}/{}, target={}/{}",
-                message.jobId(),
-                message.movieId(),
-                message.jobType(),
-                message.preset(),
-                message.sourceBucket(),
-                message.sourceKey(),
-                message.targetBucket(),
-                message.targetKey()
-        );
-        processor.process(kafkaKey, message);
+        try (MDC.MDCCloseable ignoredCorrelation = MDC.putCloseable(
+                     CorrelationIdContext.MDC_KEY,
+                     CorrelationIdContext.resolve(message.correlationId(), message.requestId())
+             );
+             MDC.MDCCloseable ignoredJob = MDC.putCloseable("jobId", message.jobId().toString());
+             MDC.MDCCloseable ignoredRequest = MDC.putCloseable("requestId", message.requestId().toString())) {
+            log.info("Media encode message consumed. {} {} {} {}",
+                    kv("eventType", "MEDIA_ENCODE_MESSAGE_CONSUMED"),
+                    kv("movieId", message.movieId()),
+                    kv("jobType", message.jobType()),
+                    kv("preset", message.preset()));
+            processor.process(kafkaKey, message);
+        }
     }
 
     @DltHandler
@@ -63,10 +68,24 @@ public class EncodingRequestedConsumer {
             @Payload MediaEncodeRequestedMessage message
     ) {
         if (message == null || message.jobId() == null) {
-            log.error("Invalid encode message reached DLT without a jobId. kafkaKey={}", kafkaKey);
+            log.error("Invalid media encode message reached DLT. {} {} {}",
+                    kv("eventType", "MEDIA_ENCODE_DLT_INVALID_MESSAGE"),
+                    kv("kafkaKey", kafkaKey),
+                    kv("status", "DLT"));
             return;
         }
-        log.error("Encode job reached DLT. jobId={}, kafkaKey={}", message.jobId(), kafkaKey);
-        failureReportService.prepareAndReportIfEligible(message.jobId());
+        String requestId = message.requestId() == null ? "-" : message.requestId().toString();
+        try (MDC.MDCCloseable ignoredCorrelation = MDC.putCloseable(
+                     CorrelationIdContext.MDC_KEY,
+                     CorrelationIdContext.resolve(message.correlationId(), message.requestId())
+             );
+             MDC.MDCCloseable ignoredJob = MDC.putCloseable("jobId", message.jobId().toString());
+             MDC.MDCCloseable ignoredRequest = MDC.putCloseable("requestId", requestId)) {
+            log.error("Media encode job reached DLT. {} {} {}",
+                    kv("eventType", "MEDIA_ENCODE_DLT_RECEIVED"),
+                    kv("kafkaKey", kafkaKey),
+                    kv("status", "DLT"));
+            failureReportService.prepareAndReportIfEligible(message.jobId());
+        }
     }
 }

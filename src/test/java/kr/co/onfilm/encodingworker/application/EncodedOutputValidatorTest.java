@@ -46,7 +46,7 @@ class EncodedOutputValidatorTest {
         UUID jobId = UUID.randomUUID();
         UUID requestId = UUID.randomUUID();
         return new MediaEncodeRequestedMessage(
-                1, jobId, requestId, 1L, 2L,
+                1, jobId, requestId, "corr-123", 1L, 2L,
                 EncodeJobType.MOVIE, EncodeJobPreset.VIDEO_HLS_720P_2500K_AAC_96K,
                 "bucket", "movie/1/raw/file/" + requestId + ".mp4",
                 "bucket", "movie/1/file/" + jobId + "/index.m3u8",

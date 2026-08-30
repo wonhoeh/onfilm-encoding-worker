@@ -1,7 +1,9 @@
 package kr.co.onfilm.encodingworker.infra.coreapi;
 
 import kr.co.onfilm.encodingworker.TestProperties;
+import kr.co.onfilm.encodingworker.observability.CorrelationIdContext;
 import org.junit.jupiter.api.Test;
+import org.slf4j.MDC;
 import org.springframework.http.*;
 import org.springframework.http.client.*;
 
@@ -34,7 +36,12 @@ class InternalCallbackHmacInterceptorTest {
         byte[] body = "{\"completedAt\":\"2026-08-21T00:00:00Z\"}".getBytes(StandardCharsets.UTF_8);
         when(execution.execute(request, body)).thenReturn(response);
 
-        assertThat(interceptor.intercept(request, body, execution)).isSameAs(response);
+        try (MDC.MDCCloseable ignored = MDC.putCloseable(
+                CorrelationIdContext.MDC_KEY,
+                "corr-123"
+        )) {
+            assertThat(interceptor.intercept(request, body, execution)).isSameAs(response);
+        }
 
         String timestamp = headers.getFirst("X-Onfilm-Timestamp");
         String nonce = headers.getFirst("X-Onfilm-Nonce");
@@ -42,6 +49,7 @@ class InternalCallbackHmacInterceptorTest {
                 + "/internal/api/media-jobs/job/complete\n" + sha256(body);
         assertThat(timestamp).isEqualTo(Long.toString(NOW.getEpochSecond()));
         assertThat(headers.getFirst("X-Onfilm-Signature")).isEqualTo(hmac(canonical));
+        assertThat(headers.getFirst(CorrelationIdContext.HEADER_NAME)).isEqualTo("corr-123");
     }
 
     private String sha256(byte[] body) throws Exception {

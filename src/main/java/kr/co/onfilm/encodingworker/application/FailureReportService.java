@@ -2,13 +2,17 @@ package kr.co.onfilm.encodingworker.application;
 
 import kr.co.onfilm.encodingworker.domain.InboxStatus;
 import kr.co.onfilm.encodingworker.infra.coreapi.*;
+import kr.co.onfilm.encodingworker.observability.CorrelationIdContext;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.slf4j.MDC;
 
 import java.time.Clock;
 import java.util.UUID;
+
+import static net.logstash.logback.argument.StructuredArguments.kv;
 
 @Slf4j
 @Service
@@ -40,16 +44,35 @@ public class FailureReportService {
         InboxTransactionService.FailureSnapshot failure = transactions.failure(jobId)
                 .orElseThrow(() -> new IllegalStateException("INBOX_JOB_NOT_FOUND"));
         if (failure.status() != InboxStatus.FAILURE_PENDING) return;
-        try {
-            coreApiClient.markFailed(jobId, failure.code(), failure.reason(), clock.instant());
-            transactions.markFailed(jobId);
-        } catch (CoreApiException exception) {
-            if (!exception.isRetryable()) {
-                log.error("Core API permanently rejected failure callback. jobId={}", jobId, exception);
+        try (MDC.MDCCloseable ignoredCorrelation = MDC.putCloseable(
+                     CorrelationIdContext.MDC_KEY,
+                     CorrelationIdContext.resolve(failure.correlationId(), failure.requestId())
+             );
+             MDC.MDCCloseable ignoredJob = MDC.putCloseable("jobId", jobId.toString());
+             MDC.MDCCloseable ignoredRequest = MDC.putCloseable(
+                     "requestId",
+                     failure.requestId().toString()
+             )) {
+            try {
+                coreApiClient.markFailed(jobId, failure.code(), failure.reason(), clock.instant());
                 transactions.markFailed(jobId);
-                return;
+                log.info("Media encode failure callback sent. {} {}",
+                        kv("eventType", "MEDIA_ENCODE_FAILURE_CALLBACK_SENT"),
+                        kv("status", "FAILED"));
+            } catch (CoreApiException exception) {
+                if (!exception.isRetryable()) {
+                    log.error("Core API permanently rejected failure callback. {} {}",
+                            kv("eventType", "MEDIA_ENCODE_FAILURE_CALLBACK_REJECTED"),
+                            kv("retryable", false),
+                            exception);
+                    transactions.markFailed(jobId);
+                    return;
+                }
+                log.warn("Failure callback will be retried. {} {}",
+                        kv("eventType", "MEDIA_ENCODE_FAILURE_CALLBACK_FAILED"),
+                        kv("retryable", true),
+                        exception);
             }
-            log.warn("Failure callback will be retried. jobId={}", jobId, exception);
         }
     }
 }

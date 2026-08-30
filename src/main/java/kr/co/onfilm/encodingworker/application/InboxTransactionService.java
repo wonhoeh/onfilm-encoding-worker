@@ -62,8 +62,16 @@ public class InboxTransactionService {
     @Transactional(readOnly = true)
     public Optional<FailureSnapshot> failure(UUID jobId) {
         return repository.findById(jobId)
-                .map(inbox -> new FailureSnapshot(
-                        inbox.getFailureCode(), inbox.getFailureReason(), inbox.getStatus()));
+                .map(inbox -> {
+                    MediaEncodeRequestedMessage message = deserialize(inbox.getPayload());
+                    return new FailureSnapshot(
+                            inbox.getFailureCode(),
+                            inbox.getFailureReason(),
+                            inbox.getStatus(),
+                            message.correlationId(),
+                            message.requestId()
+                    );
+                });
     }
 
     @Transactional(readOnly = true)
@@ -90,7 +98,13 @@ public class InboxTransactionService {
                 .orElseThrow(() -> new IllegalStateException("INBOX_JOB_NOT_FOUND"));
     }
 
-    public record FailureSnapshot(FailureCode code, String reason, InboxStatus status) {
+    public record FailureSnapshot(
+            FailureCode code,
+            String reason,
+            InboxStatus status,
+            String correlationId,
+            UUID requestId
+    ) {
     }
 
     public record RecoverySnapshot(String kafkaKey, MediaEncodeRequestedMessage message) {

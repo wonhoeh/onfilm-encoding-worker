@@ -2,8 +2,12 @@ package kr.co.onfilm.encodingworker.application;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import kr.co.onfilm.encodingworker.observability.CorrelationIdContext;
+import org.slf4j.MDC;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+
+import static net.logstash.logback.argument.StructuredArguments.kv;
 
 @Slf4j
 @Service
@@ -15,12 +19,24 @@ public class StaleInboxRecoveryService {
     @Scheduled(fixedDelayString = "${app.worker.stale-recovery-delay:60000}")
     public void recover() {
         transactions.staleProcessingJobs().forEach(snapshot -> {
-            try {
-                log.warn("Recovering stale inbox job. jobId={}", snapshot.message().jobId());
-                processor.process(snapshot.kafkaKey(), snapshot.message());
-            } catch (RuntimeException exception) {
-                log.warn("Stale inbox recovery attempt failed. jobId={}",
-                        snapshot.message().jobId(), exception);
+            var message = snapshot.message();
+            try (MDC.MDCCloseable ignoredCorrelation = MDC.putCloseable(
+                         CorrelationIdContext.MDC_KEY,
+                         CorrelationIdContext.resolve(message.correlationId(), message.requestId())
+                 );
+                 MDC.MDCCloseable ignoredJob = MDC.putCloseable("jobId", message.jobId().toString());
+                 MDC.MDCCloseable ignoredRequest = MDC.putCloseable("requestId", message.requestId().toString())) {
+                try {
+                    log.warn("Recovering stale inbox job. {} {}",
+                            kv("eventType", "MEDIA_ENCODE_STALE_RECOVERY_STARTED"),
+                            kv("status", "PROCESSING"));
+                    processor.process(snapshot.kafkaKey(), message);
+                } catch (RuntimeException exception) {
+                    log.warn("Stale inbox recovery attempt failed. {} {}",
+                            kv("eventType", "MEDIA_ENCODE_STALE_RECOVERY_FAILED"),
+                            kv("status", "PROCESSING"),
+                            exception);
+                }
             }
         });
     }

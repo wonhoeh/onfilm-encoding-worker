@@ -11,6 +11,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.*;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.slf4j.MDC;
 
 import java.nio.file.*;
 import java.time.*;
@@ -67,6 +68,12 @@ class EncodingJobProcessorTest {
                 .willReturn(new StorageObjectMetadata(100, message.sourceContentType()));
         given(storage.download(eq(message.sourceBucket()), eq(message.sourceKey()), any())).willReturn(source);
         given(transcoder.transcode(eq(message), eq(source), any())).willReturn(output);
+        doAnswer(invocation -> {
+            assertThat(MDC.get("correlationId")).isEqualTo(message.correlationId());
+            assertThat(MDC.get("requestId")).isEqualTo(message.requestId().toString());
+            assertThat(MDC.get("jobId")).isEqualTo(message.jobId().toString());
+            return null;
+        }).when(coreApi).markProcessing(message.jobId(), now);
 
         processor.process(message.jobId().toString(), message);
 
@@ -77,6 +84,7 @@ class EncodingJobProcessorTest {
         order.verify(coreApi).complete(
                 message.jobId(), message.targetBucket(), message.targetKey(), message.targetContentType(), now);
         order.verify(inbox).markDone(message.jobId());
+        assertThat(MDC.get("correlationId")).isNull();
     }
 
     @Test
@@ -112,7 +120,7 @@ class EncodingJobProcessorTest {
         UUID jobId = UUID.randomUUID();
         UUID requestId = UUID.randomUUID();
         return new MediaEncodeRequestedMessage(
-                1, jobId, requestId, 1L, 2L,
+                1, jobId, requestId, "corr-123", 1L, 2L,
                 EncodeJobType.MOVIE, EncodeJobPreset.VIDEO_HLS_720P_2500K_AAC_96K,
                 "bucket", "movie/1/raw/file/" + requestId + ".mp4",
                 "bucket", "movie/1/file/" + jobId + "/index.m3u8",

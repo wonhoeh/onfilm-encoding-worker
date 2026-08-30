@@ -6,6 +6,7 @@ import kr.co.onfilm.encodingworker.domain.*;
 import kr.co.onfilm.encodingworker.infra.coreapi.*;
 import kr.co.onfilm.encodingworker.infra.storage.*;
 import kr.co.onfilm.encodingworker.infra.transcode.*;
+import kr.co.onfilm.encodingworker.observability.CorrelationIdContext;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.exception.ExceptionUtils;
@@ -15,6 +16,8 @@ import org.springframework.stereotype.Service;
 import java.io.IOException;
 import java.nio.file.*;
 import java.time.Clock;
+
+import static net.logstash.logback.argument.StructuredArguments.kv;
 
 @Slf4j
 @Service
@@ -33,7 +36,12 @@ public class EncodingJobProcessor {
     private final MeterRegistry meterRegistry;
 
     public void process(String kafkaKey, MediaEncodeRequestedMessage message) {
-        try (MDC.MDCCloseable ignoredJob = MDC.putCloseable("jobId", String.valueOf(message.jobId()));
+        String correlationId = CorrelationIdContext.resolve(message.correlationId(), message.requestId());
+        try (MDC.MDCCloseable ignoredCorrelation = MDC.putCloseable(
+                     CorrelationIdContext.MDC_KEY,
+                     correlationId
+             );
+             MDC.MDCCloseable ignoredJob = MDC.putCloseable("jobId", String.valueOf(message.jobId()));
              MDC.MDCCloseable ignoredRequest = MDC.putCloseable("requestId", String.valueOf(message.requestId()))) {
             InboxClaim claim = claimCoordinator.claim(kafkaKey, message);
             if (claim == InboxClaim.TERMINAL) {
@@ -97,17 +105,22 @@ public class EncodingJobProcessor {
                 markSuccess(message, total);
             } catch (RuntimeException exception) {
                 RuntimeException classified = classify(exception, stage);
+                Failure failure = failure(classified);
                 if (!(classified instanceof RetryableEncodingException retryable
                         && retryable.getMessage().contains("already leased"))) {
-                    Failure failure = failure(classified);
                     inboxTransactions.recordFailure(
                             message.jobId(), failure.code(), failure.reason(), failure.retryable());
                 }
                 meterRegistry.counter("media.encode.failed",
                         "stage", stage.name().toLowerCase(),
-                        "retryable", Boolean.toString(failure(classified).retryable())).increment();
+                        "retryable", Boolean.toString(failure.retryable())).increment();
                 total.stop(meterRegistry.timer("media.encode.duration", "result", "failed"));
-                log.error("Encoding attempt failed. stage={}", stage, classified);
+                log.error("Encoding attempt failed. {} {} {} {}",
+                        kv("eventType", "MEDIA_ENCODE_ATTEMPT_FAILED"),
+                        kv("stage", stage),
+                        kv("errorCode", failure.code()),
+                        kv("retryable", failure.retryable()),
+                        classified);
                 throw classified;
             } finally {
                 cleanup(jobDir);
@@ -125,8 +138,10 @@ public class EncodingJobProcessor {
     private void markSuccess(MediaEncodeRequestedMessage message, Timer.Sample total) {
         meterRegistry.counter("media.encode.completed", "type", message.jobType().name()).increment();
         total.stop(meterRegistry.timer("media.encode.duration", "result", "success"));
-        log.info("Completed encode job. type={}, target={}/{}",
-                message.jobType(), message.targetBucket(), message.targetKey());
+        log.info("Completed encode job. {} {} {}",
+                kv("eventType", "MEDIA_ENCODE_COMPLETED"),
+                kv("jobType", message.jobType()),
+                kv("status", "DONE"));
     }
 
     private RuntimeException classify(RuntimeException exception, ProcessingStage stage) {
