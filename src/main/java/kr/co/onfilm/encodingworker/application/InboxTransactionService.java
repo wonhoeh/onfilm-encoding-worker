@@ -23,11 +23,20 @@ public class InboxTransactionService {
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public InboxClaim claim(String kafkaKey, MediaEncodeRequestedMessage message) {
+        String payload = serialize(message);
         return repository.findByJobIdForUpdate(message.jobId())
-                .map(inbox -> inbox.claim(clock.instant(), properties.worker().processingLease()))
+                .map(inbox -> {
+                    if (!inbox.hasSameRequest(kafkaKey, payload)) {
+                        throw new PermanentEncodingException(
+                                FailureCode.INVALID_REQUEST,
+                                "Same jobId was received with a different request"
+                        );
+                    }
+                    return inbox.claim(clock.instant(), properties.worker().processingLease());
+                })
                 .orElseGet(() -> {
                     repository.saveAndFlush(MediaEncodeInbox.begin(
-                            message.jobId(), kafkaKey, serialize(message),
+                            message.jobId(), kafkaKey, payload,
                             clock.instant(), properties.worker().processingLease()));
                     return InboxClaim.PROCESS;
                 });

@@ -73,6 +73,11 @@ public class MediaEncodeInbox {
         return new MediaEncodeInbox(jobId, kafkaKey, payload, now, lease);
     }
 
+    public boolean hasSameRequest(String kafkaKey, String payload) {
+        return this.kafkaKey.equals(require(kafkaKey, "kafkaKey"))
+                && this.payload.equals(require(payload, "payload"));
+    }
+
     public InboxClaim claim(Instant now, Duration lease) {
         require(now, "now");
         requirePositive(lease);
