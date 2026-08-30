@@ -1,5 +1,5 @@
 server:
-  port: 8081
+  port: ${WORKER_SERVER_PORT:8082}
 
 spring:
   datasource:
