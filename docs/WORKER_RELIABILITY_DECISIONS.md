@@ -22,6 +22,10 @@ Kafka 전달은 at-least-once이므로 같은 `jobId`가 다시 전달될 수 �
 
 최종 실패는 DLT 처리 또는 주기적인 `FAILURE_PENDING` 복구 작업에서 Core API에 보고한다. 실패 보고 자체가 실패하면 Inbox에 남겨 다음 주기에 다시 시도한다. 원본 메시지에 `jobId`가 없으면 작업을 식별할 수 없으므로 로그만 남긴다.
 
+DLT는 자동으로 원래 topic에 되돌리지 않는다. DLT handler는 수동 조사와 단건 재처리를 위해 DLT와 원본의 `topic`, `partition`, `offset`, 실패 유형과 정제된 실패 메시지를 구조화 로그로 남긴다. 실패 메시지의 인증·토큰·비밀값 패턴은 제거하고 stacktrace header 전체는 기록하지 않는다.
+
+수동 재처리는 Core API Job이 `REQUESTED` 또는 `PROCESSING`이고 Inbox가 재개 가능한 상태일 때만 기존 `jobId`로 허용한다. API Job이나 Inbox가 `DONE` 또는 `FAILED`이면 최종 상태를 되돌리지 않는다. `OUTPUT_UPLOADED`는 인코딩을 다시 실행하지 않고 Callback-only 복구를 사용한다.
+
 ## Callback authentication
 
 고정 Bearer token 대신 요청마다 HMAC-SHA256 서명을 생성한다. 서명 대상은 timestamp, nonce, HTTP method, raw path, body SHA-256이다.

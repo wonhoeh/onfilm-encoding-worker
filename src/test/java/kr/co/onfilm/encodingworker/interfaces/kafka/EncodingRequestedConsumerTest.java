@@ -10,8 +10,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.kafka.support.KafkaHeaders;
 
+import java.nio.ByteBuffer;
 import java.time.Instant;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -37,7 +40,7 @@ class EncodingRequestedConsumerTest {
 
     @Test
     void recordsInvalidDltMessage() {
-        consumer.deadLetter("invalid-key", null);
+        consumer.deadLetter("invalid-key", null, Map.of());
 
         assertThat(registry.counter(
                 "media.encode.worker.dlt", "result", "invalid").count()).isEqualTo(1);
@@ -47,11 +50,40 @@ class EncodingRequestedConsumerTest {
     void recordsDltMessageAndStartsFailureReport() {
         MediaEncodeRequestedMessage message = message();
 
-        consumer.deadLetter(message.jobId().toString(), message);
+        consumer.deadLetter(message.jobId().toString(), message, dltHeaders());
 
         verify(failureReportService).prepareAndReportIfEligible(message.jobId());
         assertThat(registry.counter(
                 "media.encode.worker.dlt", "result", "received").count()).isEqualTo(1);
+    }
+
+    @Test
+    void extractsDltLocationAndSanitizesFailureMetadata() {
+        EncodingRequestedConsumer.DltRecordMetadata metadata =
+                EncodingRequestedConsumer.DltRecordMetadata.from(dltHeaders());
+
+        assertThat(metadata.dltTopic()).isEqualTo("media.encode.requested.dlt");
+        assertThat(metadata.dltPartition()).isEqualTo("2");
+        assertThat(metadata.dltOffset()).isEqualTo("41");
+        assertThat(metadata.originalTopic()).isEqualTo("media.encode.requested");
+        assertThat(metadata.originalPartition()).isEqualTo("1");
+        assertThat(metadata.originalOffset()).isEqualTo("37");
+        assertThat(metadata.failureType()).isEqualTo("java.lang.IllegalStateException");
+        assertThat(metadata.failureMessage())
+                .isEqualTo("callback token=[REDACTED] failed");
+    }
+
+    private Map<String, Object> dltHeaders() {
+        return Map.of(
+                KafkaHeaders.RECEIVED_TOPIC, "media.encode.requested.dlt",
+                KafkaHeaders.RECEIVED_PARTITION, 2,
+                KafkaHeaders.OFFSET, 41L,
+                KafkaHeaders.DLT_ORIGINAL_TOPIC, "media.encode.requested",
+                KafkaHeaders.DLT_ORIGINAL_PARTITION, ByteBuffer.allocate(4).putInt(1).array(),
+                KafkaHeaders.DLT_ORIGINAL_OFFSET, ByteBuffer.allocate(8).putLong(37L).array(),
+                KafkaHeaders.DLT_EXCEPTION_FQCN, "java.lang.IllegalStateException",
+                KafkaHeaders.DLT_EXCEPTION_MESSAGE, "callback token=secret-value failed"
+        );
     }
 
     private MediaEncodeRequestedMessage message() {
