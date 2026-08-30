@@ -3,6 +3,7 @@ package kr.co.onfilm.encodingworker.application;
 import kr.co.onfilm.encodingworker.domain.InboxStatus;
 import kr.co.onfilm.encodingworker.infra.coreapi.*;
 import kr.co.onfilm.encodingworker.observability.CorrelationIdContext;
+import kr.co.onfilm.encodingworker.observability.WorkerMediaEncodeMetrics;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -21,6 +22,7 @@ public class FailureReportService {
     private final InboxTransactionService transactions;
     private final CoreApiClient coreApiClient;
     private final Clock clock;
+    private final WorkerMediaEncodeMetrics metrics;
 
     public void prepareAndReportIfEligible(UUID jobId) {
         InboxStatus status = transactions.failure(jobId)
@@ -44,6 +46,8 @@ public class FailureReportService {
         InboxTransactionService.FailureSnapshot failure = transactions.failure(jobId)
                 .orElseThrow(() -> new IllegalStateException("INBOX_JOB_NOT_FOUND"));
         if (failure.status() != InboxStatus.FAILURE_PENDING) return;
+        long startedAt = System.nanoTime();
+        String result = "error";
         try (MDC.MDCCloseable ignoredCorrelation = MDC.putCloseable(
                      CorrelationIdContext.MDC_KEY,
                      CorrelationIdContext.resolve(failure.correlationId(), failure.requestId())
@@ -56,6 +60,7 @@ public class FailureReportService {
             try {
                 coreApiClient.markFailed(jobId, failure.code(), failure.reason(), clock.instant());
                 transactions.markFailed(jobId);
+                result = "success";
                 log.info("Media encode failure callback sent. {} {}",
                         kv("eventType", "MEDIA_ENCODE_FAILURE_CALLBACK_SENT"),
                         kv("status", "FAILED"));
@@ -66,13 +71,17 @@ public class FailureReportService {
                             kv("retryable", false),
                             exception);
                     transactions.markFailed(jobId);
+                    result = "permanent_failure";
                     return;
                 }
+                result = "retry";
                 log.warn("Failure callback will be retried. {} {}",
                         kv("eventType", "MEDIA_ENCODE_FAILURE_CALLBACK_FAILED"),
                         kv("retryable", true),
                         exception);
             }
+        } finally {
+            metrics.recordCallback("failure", result, System.nanoTime() - startedAt);
         }
     }
 }

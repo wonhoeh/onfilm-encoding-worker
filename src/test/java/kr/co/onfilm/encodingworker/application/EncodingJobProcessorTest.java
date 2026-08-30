@@ -6,6 +6,7 @@ import kr.co.onfilm.encodingworker.domain.*;
 import kr.co.onfilm.encodingworker.infra.coreapi.CoreApiClient;
 import kr.co.onfilm.encodingworker.infra.storage.*;
 import kr.co.onfilm.encodingworker.infra.transcode.*;
+import kr.co.onfilm.encodingworker.observability.WorkerMediaEncodeMetrics;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
@@ -34,13 +35,15 @@ class EncodingJobProcessorTest {
     @TempDir Path tempDir;
     private final Instant now = Instant.parse("2026-08-21T00:00:00Z");
     private EncodingJobProcessor processor;
+    private SimpleMeterRegistry meterRegistry;
 
     @BeforeEach
     void setUp() {
+        meterRegistry = new SimpleMeterRegistry();
         processor = new EncodingJobProcessor(
                 TestProperties.create(tempDir.toString()), validator, claimCoordinator, inbox,
                 coreApi, storage, probe, transcoder, outputValidator,
-                Clock.fixed(now, ZoneOffset.UTC), new SimpleMeterRegistry());
+                Clock.fixed(now, ZoneOffset.UTC), new WorkerMediaEncodeMetrics(meterRegistry));
     }
 
     @Test
@@ -55,6 +58,12 @@ class EncodingJobProcessorTest {
                 message.targetContentType(), now);
         verify(inbox).markDone(message.jobId());
         verifyNoInteractions(storage, transcoder, probe, validator);
+        assertThat(meterRegistry.counter(
+                "media.encode.worker.inbox.claim", "result", "callback_only").count())
+                .isEqualTo(1);
+        assertThat(meterRegistry.counter(
+                "media.encode.worker.callback", "type", "complete", "result", "success").count())
+                .isEqualTo(1);
     }
 
     @Test
@@ -85,6 +94,12 @@ class EncodingJobProcessorTest {
                 message.jobId(), message.targetBucket(), message.targetKey(), message.targetContentType(), now);
         order.verify(inbox).markDone(message.jobId());
         assertThat(MDC.get("correlationId")).isNull();
+        assertThat(meterRegistry.counter(
+                "media.encode.worker.attempt", "type", "movie", "result", "success").count())
+                .isEqualTo(1);
+        assertThat(meterRegistry.get("media.encode.worker.stage.duration")
+                .tags("type", "movie", "stage", "transcode", "result", "success")
+                .timer().count()).isEqualTo(1);
     }
 
     @Test
@@ -100,6 +115,13 @@ class EncodingJobProcessorTest {
                 eq(message.jobId()), eq(FailureCode.SOURCE_DOWNLOAD_FAILED),
                 contains("temporary s3 failure"), eq(true));
         verify(coreApi, never()).markFailed(any(), any(), any(), any());
+        assertThat(meterRegistry.counter(
+                "media.encode.worker.failure",
+                "type", "movie",
+                "stage", "download",
+                "code", "source_download_failed",
+                "retryable", "true"
+        ).count()).isEqualTo(1);
     }
 
     @Test

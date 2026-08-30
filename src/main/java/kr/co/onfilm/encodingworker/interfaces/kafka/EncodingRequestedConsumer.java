@@ -5,6 +5,7 @@ import kr.co.onfilm.encodingworker.application.FailureReportService;
 import kr.co.onfilm.encodingworker.application.PermanentEncodingException;
 import kr.co.onfilm.encodingworker.domain.MediaEncodeRequestedMessage;
 import kr.co.onfilm.encodingworker.observability.CorrelationIdContext;
+import kr.co.onfilm.encodingworker.observability.WorkerMediaEncodeMetrics;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.annotation.KafkaListener;
@@ -28,6 +29,7 @@ public class EncodingRequestedConsumer {
 
     private final EncodingJobProcessor processor;
     private final FailureReportService failureReportService;
+    private final WorkerMediaEncodeMetrics metrics;
 
     @KafkaListener(
             topics = "${app.worker.topic}",
@@ -68,12 +70,14 @@ public class EncodingRequestedConsumer {
             @Payload MediaEncodeRequestedMessage message
     ) {
         if (message == null || message.jobId() == null) {
+            metrics.recordDlt("invalid");
             log.error("Invalid media encode message reached DLT. {} {} {}",
                     kv("eventType", "MEDIA_ENCODE_DLT_INVALID_MESSAGE"),
                     kv("kafkaKey", kafkaKey),
                     kv("status", "DLT"));
             return;
         }
+        metrics.recordDlt("received");
         String requestId = message.requestId() == null ? "-" : message.requestId().toString();
         try (MDC.MDCCloseable ignoredCorrelation = MDC.putCloseable(
                      CorrelationIdContext.MDC_KEY,

@@ -13,6 +13,11 @@ public interface MediaEncodeInboxRepository extends JpaRepository<MediaEncodeInb
     @Query("select i from MediaEncodeInbox i where i.jobId = :jobId")
     Optional<MediaEncodeInbox> findByJobIdForUpdate(@Param("jobId") UUID jobId);
 
+    long countByStatus(InboxStatus status);
+
+    @Query("select min(i.updatedAt) from MediaEncodeInbox i where i.status = :status")
+    Optional<Instant> findOldestUpdatedAtByStatus(@Param("status") InboxStatus status);
+
     List<MediaEncodeInbox> findTop100ByStatusOrderByUpdatedAt(InboxStatus status);
 
     List<MediaEncodeInbox> findTop100ByStatusAndLeaseUntilBeforeOrderByUpdatedAt(

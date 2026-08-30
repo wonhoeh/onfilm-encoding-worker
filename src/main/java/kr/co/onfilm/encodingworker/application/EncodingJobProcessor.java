@@ -1,12 +1,12 @@
 package kr.co.onfilm.encodingworker.application;
 
-import io.micrometer.core.instrument.*;
 import kr.co.onfilm.encodingworker.config.AppProperties;
 import kr.co.onfilm.encodingworker.domain.*;
 import kr.co.onfilm.encodingworker.infra.coreapi.*;
 import kr.co.onfilm.encodingworker.infra.storage.*;
 import kr.co.onfilm.encodingworker.infra.transcode.*;
 import kr.co.onfilm.encodingworker.observability.CorrelationIdContext;
+import kr.co.onfilm.encodingworker.observability.WorkerMediaEncodeMetrics;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.exception.ExceptionUtils;
@@ -33,7 +33,7 @@ public class EncodingJobProcessor {
     private final FfmpegTranscoder transcoder;
     private final EncodedOutputValidator outputValidator;
     private final Clock clock;
-    private final MeterRegistry meterRegistry;
+    private final WorkerMediaEncodeMetrics metrics;
 
     public void process(String kafkaKey, MediaEncodeRequestedMessage message) {
         String correlationId = CorrelationIdContext.resolve(message.correlationId(), message.requestId());
@@ -44,33 +44,44 @@ public class EncodingJobProcessor {
              MDC.MDCCloseable ignoredJob = MDC.putCloseable("jobId", String.valueOf(message.jobId()));
              MDC.MDCCloseable ignoredRequest = MDC.putCloseable("requestId", String.valueOf(message.requestId()))) {
             InboxClaim claim = claimCoordinator.claim(kafkaKey, message);
+            metrics.recordInboxClaim(claim);
             if (claim == InboxClaim.TERMINAL) {
-                meterRegistry.counter("media.encode.duplicate", "result", "terminal").increment();
                 log.info("Skipping terminal inbox job");
                 return;
             }
             if (claim == InboxClaim.BUSY) {
-                meterRegistry.counter("media.encode.duplicate", "result", "busy").increment();
                 throw new RetryableEncodingException(
                         FailureCode.CORE_API_UNAVAILABLE,
                         "Job is already leased by another worker",
                         null);
             }
 
-            Timer.Sample total = Timer.start(meterRegistry);
+            long attemptStartedAt = System.nanoTime();
             Path jobDir = safeJobDirectory(message);
             ProcessingStage stage = ProcessingStage.VALIDATION;
+            long stageStartedAt = attemptStartedAt;
             try {
                 if (claim == InboxClaim.CALLBACK_ONLY) {
+                    stage = ProcessingStage.CALLBACK;
+                    stageStartedAt = System.nanoTime();
                     completeCallback(message);
-                    markSuccess(message, total);
+                    metrics.recordStage(
+                            message.jobType(), stage.name(), "success",
+                            System.nanoTime() - stageStartedAt
+                    );
+                    markSuccess(message, attemptStartedAt);
                     return;
                 }
 
                 validator.validate(kafkaKey, message);
                 coreApiClient.markProcessing(message.jobId(), clock.instant());
+                metrics.recordStage(
+                        message.jobType(), stage.name(), "success",
+                        System.nanoTime() - stageStartedAt
+                );
 
                 stage = ProcessingStage.DOWNLOAD;
+                stageStartedAt = System.nanoTime();
                 StorageObjectMetadata metadata =
                         storageClient.metadata(message.sourceBucket(), message.sourceKey());
                 if (metadata.contentLength() <= 0
@@ -87,22 +98,46 @@ public class EncodingJobProcessor {
                 Path sourceDestination = jobDir.resolve("source").resolve(sourceFileName(message.sourceKey()));
                 Path sourceFile = storageClient.download(
                         message.sourceBucket(), message.sourceKey(), sourceDestination);
+                metrics.recordStage(
+                        message.jobType(), stage.name(), "success",
+                        System.nanoTime() - stageStartedAt
+                );
 
                 stage = ProcessingStage.PROBE;
+                stageStartedAt = System.nanoTime();
                 mediaProbe.validate(sourceFile);
+                metrics.recordStage(
+                        message.jobType(), stage.name(), "success",
+                        System.nanoTime() - stageStartedAt
+                );
 
                 stage = ProcessingStage.TRANSCODE;
+                stageStartedAt = System.nanoTime();
                 EncodedOutput output = transcoder.transcode(message, sourceFile, jobDir.resolve("output"));
                 outputValidator.validate(message, output);
+                metrics.recordStage(
+                        message.jobType(), stage.name(), "success",
+                        System.nanoTime() - stageStartedAt
+                );
 
                 stage = ProcessingStage.UPLOAD;
+                stageStartedAt = System.nanoTime();
                 storageClient.uploadFiles(
                         message.targetBucket(), message.targetKey(), output.files(), output.contentType());
                 inboxTransactions.markOutputUploaded(message.jobId());
+                metrics.recordStage(
+                        message.jobType(), stage.name(), "success",
+                        System.nanoTime() - stageStartedAt
+                );
 
                 stage = ProcessingStage.CALLBACK;
+                stageStartedAt = System.nanoTime();
                 completeCallback(message);
-                markSuccess(message, total);
+                metrics.recordStage(
+                        message.jobType(), stage.name(), "success",
+                        System.nanoTime() - stageStartedAt
+                );
+                markSuccess(message, attemptStartedAt);
             } catch (RuntimeException exception) {
                 RuntimeException classified = classify(exception, stage);
                 Failure failure = failure(classified);
@@ -111,10 +146,16 @@ public class EncodingJobProcessor {
                     inboxTransactions.recordFailure(
                             message.jobId(), failure.code(), failure.reason(), failure.retryable());
                 }
-                meterRegistry.counter("media.encode.failed",
-                        "stage", stage.name().toLowerCase(),
-                        "retryable", Boolean.toString(failure.retryable())).increment();
-                total.stop(meterRegistry.timer("media.encode.duration", "result", "failed"));
+                metrics.recordStage(
+                        message.jobType(), stage.name(), "failure",
+                        System.nanoTime() - stageStartedAt
+                );
+                metrics.recordFailure(
+                        message.jobType(), stage.name(), failure.code(), failure.retryable()
+                );
+                metrics.recordAttempt(
+                        message.jobType(), "failure", System.nanoTime() - attemptStartedAt
+                );
                 log.error("Encoding attempt failed. {} {} {} {}",
                         kv("eventType", "MEDIA_ENCODE_ATTEMPT_FAILED"),
                         kv("stage", stage),
@@ -129,15 +170,26 @@ public class EncodingJobProcessor {
     }
 
     private void completeCallback(MediaEncodeRequestedMessage message) {
-        coreApiClient.complete(
-                message.jobId(), message.targetBucket(), message.targetKey(),
-                message.targetContentType(), clock.instant());
-        inboxTransactions.markDone(message.jobId());
+        long startedAt = System.nanoTime();
+        String result = "error";
+        try {
+            coreApiClient.complete(
+                    message.jobId(), message.targetBucket(), message.targetKey(),
+                    message.targetContentType(), clock.instant());
+            inboxTransactions.markDone(message.jobId());
+            result = "success";
+        } catch (CoreApiException exception) {
+            result = exception.isRetryable() ? "retry" : "permanent_failure";
+            throw exception;
+        } finally {
+            metrics.recordCallback("complete", result, System.nanoTime() - startedAt);
+        }
     }
 
-    private void markSuccess(MediaEncodeRequestedMessage message, Timer.Sample total) {
-        meterRegistry.counter("media.encode.completed", "type", message.jobType().name()).increment();
-        total.stop(meterRegistry.timer("media.encode.duration", "result", "success"));
+    private void markSuccess(MediaEncodeRequestedMessage message, long attemptStartedAt) {
+        metrics.recordAttempt(
+                message.jobType(), "success", System.nanoTime() - attemptStartedAt
+        );
         log.info("Completed encode job. {} {} {}",
                 kv("eventType", "MEDIA_ENCODE_COMPLETED"),
                 kv("jobType", message.jobType()),
