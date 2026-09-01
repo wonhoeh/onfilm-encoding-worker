@@ -79,6 +79,19 @@ Docker Engine이 실행 중인 Worker 저장소에서 다음 명령을 사용한
 
 Docker에 접근할 수 없으면 MySQL 통합 테스트를 성공으로 건너뛰지 않고 실패시킨다.
 
+## CI 검증
+
+`.github/workflows/worker-ci.yml`은 Pull Request와 `main`, `test` 브랜치 Push에서 다음 검증을 수행한다.
+
+| Job | Gradle 명령 | 책임 |
+|---|---|---|
+| `unit-test` | `./gradlew test --no-daemon` | H2 기반 단위·슬라이스 테스트를 빠르게 검증 |
+| `mysql-integration-test` | `./gradlew integrationTest --no-daemon` | MySQL 8.4.11에서 Flyway, Hibernate Mapping, Inbox 영속성과 장애 시나리오 검증 |
+
+두 Job은 서로 독립적으로 실행한다. MySQL Job은 GitHub Actions Runner의 Docker 가용성을 먼저 확인하며, Docker 또는 Testcontainers 시작 실패를 테스트 성공으로 건너뛰지 않는다. 각 Job이 실패하면 해당 Gradle HTML·XML 보고서를 7일간 Artifact로 보관해 원인을 추적한다.
+
+CI에는 고정 DB 비밀번호나 JDBC URL을 저장하지 않는다. Testcontainers가 격리된 임시 DB와 계정을 만들고 테스트 종료 시 폐기하므로 Repository Secret이나 외부 MySQL Service가 필요하지 않다.
+
 ## 관련 문서
 
 - [Worker 신뢰성 결정](WORKER_RELIABILITY_DECISIONS.md)
