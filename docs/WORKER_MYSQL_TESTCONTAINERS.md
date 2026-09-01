@@ -38,7 +38,8 @@ class ExampleIntegrationTest extends MySqlContainerSupport {
 - 전용 계정이 `onfilm_worker_app`인지 확인
 - 문자 집합과 Collation 확인
 - `media_encode_inbox` JPA Schema가 실제 MySQL에 생성되는지 확인
-- 빈 DB에서 Flyway V1 적용과 `flyway_schema_history` 확인
+- 빈 DB에서 Flyway V1부터 V2까지 적용하고 `flyway_schema_history` 확인
+- Flyway V2의 Inbox CHECK 10개 존재와 고정 Constraint 이름 확인
 - Hibernate `ddl-auto: validate`로 Entity·Schema 일치 확인
 - `job_id`가 Kafka·Callback 계약과 같은 `VARCHAR(36)`인지 확인
 - Inbox `payload`가 255바이트 제한의 `TINYTEXT`가 아닌 `TEXT`인지 확인
@@ -51,6 +52,8 @@ class ExampleIntegrationTest extends MySqlContainerSupport {
 - 일반 트랜잭션 commit과 실행 중 예외가 발생한 INSERT rollback 검증
 - 바깥 트랜잭션 rollback과 분리된 Inbox `REQUIRES_NEW` commit 검증
 - `PESSIMISTIC_WRITE` 행 잠금이 첫 트랜잭션 commit까지 두 번째 커넥션을 대기시키는지 검증
+- 잘못된 횟수·시간·payload·lease·실패 상태 조합을 V2 CHECK가 거부하는지 검증
+- 여섯 Inbox 상태와 Callback 실패 후 `OUTPUT_UPLOADED` 변형의 정상 저장 검증
 
 최초 MySQL 실행에서는 `@Lob`만 선언한 `payload`가 `TINYTEXT`로 생성되어 실제 Kafka JSON 저장이 `Data too long for column 'payload'`로 실패했다. Entity Mapping에 `columnDefinition = "TEXT"`를 명시해 H2에서 발견하지 못했던 차이를 수정했고, 다음 V1도 같은 타입으로 작성한다.
 

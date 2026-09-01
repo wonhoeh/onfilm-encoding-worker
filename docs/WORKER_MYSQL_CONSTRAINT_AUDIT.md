@@ -3,9 +3,9 @@
 - 감사일: 2026-09-02
 - 대상 DB: `onfilm_worker`
 - 대상 테이블: `media_encode_inbox`
-- 기준 Migration: `V1__create_initial_schema.sql`
+- 기준 Migration: `V1__create_initial_schema.sql`부터 `V2__strengthen_inbox_constraints.sql`까지
 - 기준 실행 환경: MySQL 8.4.11, `utf8mb4_0900_ai_ci`
-- 상태: 감사 완료, 후속 Constraint Migration 후보 확정
+- 상태: 감사 완료, V2 Constraint와 MySQL 거부 테스트 적용 완료
 
 ## 목적
 
@@ -17,7 +17,7 @@ Worker의 JPA Mapping, Flyway Schema와 실제 상태 전이를 대조해 다음
 - 직접 SQL이나 동시 처리로도 깨지면 안 되는 상태 불변식을 CHECK로 보강할 수 있는가?
 - 제약 강화가 정상적인 retry, lease 복구와 Callback-only 흐름을 막지 않는가?
 
-이번 단계는 현재 상태를 감사하고 다음 Migration 범위를 결정하는 문서 작업이다. 이미 적용된 V1은 수정하지 않으며, 확정된 제약과 MySQL 거부 테스트는 별도 V2 Migration 작업에서 함께 추가한다.
+V1 상태를 감사한 뒤 적용된 V1은 수정하지 않고, 확정한 제약과 MySQL 거부 테스트를 별도 V2 Migration 작업으로 추가했다.
 
 ## 현재 Schema 현황
 
@@ -26,13 +26,13 @@ Worker의 JPA Mapping, Flyway Schema와 실제 상태 전이를 대조해 다음
 | Worker 소유 테이블 | 1 | `media_encode_inbox` |
 | Primary Key | 1 | `job_id` |
 | PK 외 Unique Constraint | 0 | 추가 중복 키 없음 |
-| 명시적 Check Constraint | 0 | 상태 조합은 Entity만 보호 |
+| 명시적 Check Constraint | 10 | 수치·시간·payload·상태 조합 보호 |
 | MySQL ENUM 컬럼 | 2 | `status`, `failure_code` |
 | Foreign Key | 0 | API DB와 물리 관계 없음 |
 | nullable 컬럼 | 3 | `lease_until`, `failure_code`, `failure_reason` |
 | 보조 Index | 2 | lease 복구, 실패 Callback 조회 |
 
-`job_id` Primary Key가 한 Job당 Inbox 한 건만 허용하므로 Worker의 핵심 멱등성은 DB에서도 보호된다. 별도 Unique Constraint는 현재 필요하지 않다. 반면 횟수, 시간 순서와 상태별 nullable 조합은 V1에서 애플리케이션 로직에만 의존한다.
+`job_id` Primary Key가 한 Job당 Inbox 한 건만 허용하므로 Worker의 핵심 멱등성은 DB에서도 보호된다. 별도 Unique Constraint는 현재 필요하지 않다. V1에서 애플리케이션 로직에만 의존하던 횟수, 시간 순서와 상태별 nullable 조합은 V2 CHECK로 보강했다.
 
 ## 컬럼별 감사 결과
 
@@ -46,7 +46,7 @@ Worker의 JPA Mapping, Flyway Schema와 실제 상태 전이를 대조해 다음
 | `created_at` | `DATETIME(6) NOT NULL` | Inbox 최초 생성 시각 | 유지 |
 | `updated_at` | `DATETIME(6) NOT NULL` | 마지막 상태 변경 시각 | 생성 시각 이상 CHECK 보강 |
 | `kafka_key` | `VARCHAR(36) NOT NULL` | 최초 수신 Kafka key와 중복 요청 동일성 비교 | 유지, UNIQUE·job_id 일치 CHECK 제외 |
-| `payload` | `TEXT NOT NULL` | 복구와 충돌 판정을 위한 직렬화 메시지 | TEXT 유지, JSON 유효성 CHECK 보강 후보 |
+| `payload` | `TEXT NOT NULL` | 복구와 충돌 판정을 위한 직렬화 메시지 | TEXT 유지, JSON 유효성 CHECK 적용 |
 | `failure_code` | nullable ENUM | 실패가 기록된 상태의 분류 코드 | nullable 유지, failure pair CHECK 보강 |
 | `failure_reason` | nullable `VARCHAR(1000)` | 정제·길이 제한된 운영 실패 사유 | nullable 유지, failure pair·blank CHECK 보강 |
 
@@ -63,7 +63,7 @@ Kafka key 일치 여부는 `EncodeRequestValidator`가 명확한 실패 코드�
 
 ### Payload 저장 형식
 
-`payload`는 조회 조건으로 사용하지 않고 Worker 복구 시 전체 메시지를 역직렬화하는 원문 스냅샷이다. MySQL `JSON` 컬럼으로 변경하면 JPA 타입 Mapping과 저장 표현의 결합이 커지므로 `TEXT`를 유지한다. 다만 직접 SQL로 손상된 문자열이 저장되는 것을 차단하기 위해 `CHECK(JSON_VALID(payload))`를 V2 후보로 둔다.
+`payload`는 조회 조건으로 사용하지 않고 Worker 복구 시 전체 메시지를 역직렬화하는 원문 스냅샷이다. MySQL `JSON` 컬럼으로 변경하면 JPA 타입 Mapping과 저장 표현의 결합이 커지므로 `TEXT`를 유지한다. 직접 SQL로 손상된 문자열이 저장되는 것은 V2의 `CHECK(JSON_VALID(payload))`로 차단한다.
 
 ## Unique Constraint 감사
 
@@ -89,7 +89,7 @@ nullable 세 컬럼은 모두 상태 머신에 필요한 의도적인 선택이�
 | `DONE` | null | null | 성공 종결 시 lease와 과거 실패 정보 제거 |
 | `FAILED` | null | 필수 | 실패 종결 원인 보존 |
 
-다음 규칙은 현재 모든 Entity 전이와 일치하며 V2 CHECK 후보로 확정한다.
+다음 규칙은 현재 모든 Entity 전이와 일치하며 V2 CHECK로 적용했다.
 
 1. `attempts >= 1`
 2. `version >= 0`
@@ -130,9 +130,9 @@ API Job, Movie 또는 User가 삭제돼도 Worker Inbox를 DB cascade로 즉시 
 4. 빈 MySQL Migration과 Hibernate `validate` 실행
 5. 모든 상태 저장과 거부 테스트 재실행
 
-## 후속 Constraint Migration 범위
+## 적용된 Constraint Migration
 
-다음 단계에서는 적용된 V1을 수정하지 않고 `V2__strengthen_inbox_constraints.sql`을 추가한다.
+적용된 V1을 수정하지 않고 `V2__strengthen_inbox_constraints.sql`을 추가했다.
 
 ### 적용 대상
 
@@ -149,9 +149,9 @@ API Job, Movie 또는 User가 삭제돼도 Worker Inbox를 DB cascade로 즉시 
 
 Constraint 이름은 실패 응답과 운영 로그에서 원인을 식별할 수 있도록 고정한다. 상태 조합은 하나의 거대한 CHECK보다 책임별 제약으로 나눠 어떤 불변식이 깨졌는지 알 수 있게 한다.
 
-### 필수 거부 테스트
+### 적용된 거부 테스트
 
-V2 적용 시 MySQL에서 다음 직접 INSERT·UPDATE가 각각 거부되는지 검증한다.
+V2 적용 후 MySQL에서 다음 직접 INSERT·UPDATE가 각각 거부되는지 검증한다.
 
 - attempts 0과 version 음수
 - 생성보다 이른 updated 시각과 updated 시각 이하의 lease
@@ -163,7 +163,7 @@ V2 적용 시 MySQL에서 다음 직접 INSERT·UPDATE가 각각 거부되는지
 - 실패 정보가 남은 DONE
 - JSON이 아닌 payload
 
-정상 경로는 여섯 Inbox 상태를 모두 실제로 저장하고 기존 duplicate delivery, lease 복구, Callback-only, terminal 상태와 비관적 잠금 테스트를 재실행한다.
+정상 경로는 여섯 Inbox 상태와 Callback 실패 후 `OUTPUT_UPLOADED` 변형을 모두 실제로 저장한다. 기존 duplicate delivery, lease 복구, Callback-only, terminal 상태와 비관적 잠금 테스트도 전체 `check`에서 재실행한다.
 
 ## 의도적으로 적용하지 않는 제약
 
