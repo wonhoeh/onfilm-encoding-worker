@@ -48,6 +48,9 @@ class ExampleIntegrationTest extends MySqlContainerSupport {
 - 상태별 건수와 가장 오래된 `FAILURE_PENDING` 시각 집계 검증
 - 실패 Callback 조회가 `updated_at` 오름차순으로 최대 100건만 반환하는지 검증
 - lease 만료 조회가 상태를 구분하고 경계 시각 미만만 오래된 순서로 반환하는지 검증
+- 일반 트랜잭션 commit과 실행 중 예외가 발생한 INSERT rollback 검증
+- 바깥 트랜잭션 rollback과 분리된 Inbox `REQUIRES_NEW` commit 검증
+- `PESSIMISTIC_WRITE` 행 잠금이 첫 트랜잭션 commit까지 두 번째 커넥션을 대기시키는지 검증
 
 최초 MySQL 실행에서는 `@Lob`만 선언한 `payload`가 `TINYTEXT`로 생성되어 실제 Kafka JSON 저장이 `Data too long for column 'payload'`로 실패했다. Entity Mapping에 `columnDefinition = "TEXT"`를 명시해 H2에서 발견하지 못했던 차이를 수정했고, 다음 V1도 같은 타입으로 작성한다.
 
@@ -97,6 +100,8 @@ Docker에 접근할 수 없으면 MySQL 통합 테스트를 성공으로 건너�
 CI에는 고정 DB 비밀번호나 JDBC URL을 저장하지 않는다. Testcontainers가 격리된 임시 DB와 계정을 만들고 테스트 종료 시 폐기하므로 Repository Secret이나 외부 MySQL Service가 필요하지 않다.
 
 Worker DB에는 현재 `media_encode_inbox` Aggregate만 존재하며 JPA 연관관계가 없다. API 소유 식별자는 Kafka와 Callback 계약으로만 연결하고 Cross-DB FK를 금지하므로, Worker Repository 통합 테스트는 연관관계 cascade보다 Inbox의 멱등성 식별자, 운영 조회의 정렬·제한, nullable 실패 정보와 lease 조건을 우선 검증한다.
+
+트랜잭션 검증은 테스트 메서드의 자동 rollback에 의존하지 않고 `TransactionTemplate`로 실제 commit과 rollback을 발생시킨다. 비관적 잠금 테스트는 두 스레드와 두 DB 트랜잭션을 사용해 첫 번째 `SELECT ... FOR UPDATE`가 끝나기 전에는 두 번째 잠금 조회가 완료되지 않고, commit 이후 첫 번째 변경 상태를 읽는지 확인한다. 이 테스트는 ffmpeg, S3 또는 Callback 같은 외부 I/O를 DB 트랜잭션 안에 포함해야 한다는 의미가 아니라 짧은 Inbox 상태 변경 구간의 직렬화만 보장한다.
 
 ## 관련 문서
 
