@@ -8,6 +8,8 @@ group = 'kr.co.onfilm'
 version = '0.0.1-SNAPSHOT'
 description = 'Onfilm async video encoding worker'
 
+ext['testcontainers.version'] = '1.21.4'
+
 java {
 	toolchain {
 		languageVersion = JavaLanguageVersion.of(17)
@@ -54,6 +56,7 @@ dependencies {
 	runtimeOnly 'com.mysql:mysql-connector-j'
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testImplementation 'org.springframework.kafka:spring-kafka-test'
+	testImplementation 'org.testcontainers:mysql'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
@@ -62,11 +65,12 @@ tasks.named('test') {
 }
 
 tasks.register('integrationTest', Test) {
-	description = 'Runs failure-injection integration tests.'
+	description = 'Runs MySQL and failure-injection integration tests.'
 	group = 'verification'
 	testClassesDirs = sourceSets.integrationTest.output.classesDirs
 	classpath = sourceSets.integrationTest.runtimeClasspath
 	useJUnitPlatform()
+	maxParallelForks = 1
 	shouldRunAfter tasks.named('test')
 }
 

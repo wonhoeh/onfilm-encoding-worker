@@ -13,9 +13,11 @@ import kr.co.onfilm.encodingworker.domain.InboxStatus;
 import kr.co.onfilm.encodingworker.domain.MediaEncodeInbox;
 import kr.co.onfilm.encodingworker.domain.MediaEncodeRequestedMessage;
 import kr.co.onfilm.encodingworker.infra.inbox.MediaEncodeInboxRepository;
+import kr.co.onfilm.encodingworker.support.MySqlContainerSupport;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
@@ -36,13 +38,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @DataJpaTest
+@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import({
         InboxTransactionService.class,
         InboxClaimCoordinator.class,
         MediaEncodeInboxFailureInjectionIntegrationTest.TestConfig.class
 })
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
-class MediaEncodeInboxFailureInjectionIntegrationTest {
+class MediaEncodeInboxFailureInjectionIntegrationTest extends MySqlContainerSupport {
 
     private static final Instant NOW = Instant.parse("2026-08-31T00:00:00Z");
 

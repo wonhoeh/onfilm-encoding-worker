@@ -5,6 +5,8 @@ import kr.co.onfilm.encodingworker.application.FailureCode;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -20,6 +22,7 @@ import java.util.UUID;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class MediaEncodeInbox {
     @Id
+    @JdbcTypeCode(SqlTypes.VARCHAR)
     @Column(name = "job_id", nullable = false, updatable = false, length = 36)
     private UUID jobId;
 
@@ -47,7 +50,7 @@ public class MediaEncodeInbox {
     private String kafkaKey;
 
     @Lob
-    @Column(nullable = false, updatable = false)
+    @Column(nullable = false, updatable = false, columnDefinition = "TEXT")
     private String payload;
 
     @Enumerated(EnumType.STRING)
