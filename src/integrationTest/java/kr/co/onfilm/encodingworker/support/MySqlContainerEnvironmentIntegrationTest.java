@@ -6,6 +6,8 @@ import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabas
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 @DataJpaTest(properties = "spring.sql.init.mode=never")
@@ -55,6 +57,13 @@ class MySqlContainerEnvironmentIntegrationTest extends MySqlContainerSupport {
                   AND table_name = 'media_encode_inbox'
                   AND column_name = 'job_id'
                 """, Long.class);
+        String migrationVersion = jdbcTemplate.queryForObject("""
+                SELECT version
+                FROM flyway_schema_history
+                WHERE success = TRUE
+                ORDER BY installed_rank DESC
+                LIMIT 1
+                """, String.class);
 
         assertThat(database).isEqualTo("onfilm_worker");
         assertThat(currentUser).startsWith("onfilm_worker_app@");
@@ -65,5 +74,21 @@ class MySqlContainerEnvironmentIntegrationTest extends MySqlContainerSupport {
         assertThat(payloadDataType).isEqualTo("text");
         assertThat(jobIdDataType).isEqualTo("varchar");
         assertThat(jobIdMaxLength).isEqualTo(36L);
+        assertThat(migrationVersion).isEqualTo("1");
+        assertIndexColumns("idx_inbox_status_lease", "status", "lease_until");
+        assertIndexColumns("idx_inbox_failure_pending", "status", "updated_at");
+    }
+
+    private void assertIndexColumns(String indexName, String... expectedColumns) {
+        List<String> columns = jdbcTemplate.queryForList("""
+                SELECT column_name
+                FROM information_schema.statistics
+                WHERE table_schema = DATABASE()
+                  AND table_name = 'media_encode_inbox'
+                  AND index_name = ?
+                ORDER BY seq_in_index
+                """, String.class, indexName);
+
+        assertThat(columns).containsExactly(expectedColumns);
     }
 }

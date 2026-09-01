@@ -129,4 +129,4 @@ health check는 작업 디렉터리 쓰기 가능 여부, 가용 디스크 1 GiB
 ./gradlew check
 ```
 
-DB 동작이 중요한 통합 테스트는 [MySQL Testcontainers 환경](docs/WORKER_MYSQL_TESTCONTAINERS.md)에서 실행합니다. 현재는 Hibernate `create-drop`을 사용하는 전환 단계이며 다음 작업에서 Flyway V1과 `validate`로 변경합니다.
+DB 동작이 중요한 통합 테스트는 [MySQL Testcontainers 환경](docs/WORKER_MYSQL_TESTCONTAINERS.md)에서 실행합니다. 빈 `onfilm_worker`에 Flyway Migration을 적용하고 Hibernate `validate`로 Inbox Mapping을 검증합니다.

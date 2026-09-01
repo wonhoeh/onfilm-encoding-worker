@@ -22,13 +22,22 @@ spring:
     listener:
       ack-mode: record
   datasource:
-    url: ${WORKER_DB_URL:jdbc:h2:file:./data/encoding-worker-inbox;AUTO_SERVER=TRUE}
-    username: ${WORKER_DB_USER:sa}
+    url: ${WORKER_DB_URL:jdbc:mysql://127.0.0.1:3306/onfilm_worker}
+    username: ${WORKER_DB_USER:onfilm_worker_app}
     password: ${WORKER_DB_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
   jpa:
     open-in-view: false
     hibernate:
-      ddl-auto: update
+      ddl-auto: validate
+    defer-datasource-initialization: false
+  sql:
+    init:
+      mode: never
+  flyway:
+    enabled: true
+    baseline-on-migrate: false
+    validate-migration-naming: true
 
 app:
   worker:

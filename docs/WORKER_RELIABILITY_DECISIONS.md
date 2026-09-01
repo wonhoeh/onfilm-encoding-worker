@@ -16,6 +16,17 @@ Kafka 전달은 at-least-once이므로 같은 `jobId`가 다시 전달될 수 �
 
 이 방식은 DB 운영과 상태 정리 비용이 생기지만, 긴 인코딩을 중복 실행하거나 이미 업로드한 결과를 다시 만드는 비용을 줄인다.
 
+### Inbox Schema management
+
+Worker는 `onfilm_worker` 논리 DB와 `media_encode_inbox` 테이블만 소유한다. Schema의 단일 기준은 Flyway Versioned Migration이며, MySQL 환경에서 Hibernate는 `ddl-auto: validate`만 수행한다.
+
+- `job_id`는 Kafka·Callback의 UUID 문자열과 같은 `VARCHAR(36)` PK로 저장한다.
+- API Job과 값은 연결하지만 API DB를 참조하는 FK는 만들지 않는다.
+- 원본 Kafka JSON은 `TEXT`로 저장해 lease 만료와 Callback-only 복구에 사용한다.
+- `(status, lease_until)`은 만료 lease 조회, `(status, updated_at)`은 실패 보고와 운영 조회를 지원한다.
+- V1은 보존할 운영 데이터가 없는 빈 `onfilm_worker`를 대상으로 하며 `baselineOnMigrate`를 사용하지 않는다.
+- 개발용 H2는 빠른 확인에만 사용하고 Migration·MySQL 호환성의 근거로 삼지 않는다.
+
 ## Retry and DLT
 
 네트워크, S3, Core API 5xx/408/429, ffmpeg timeout 같은 일시 오류는 지수 backoff로 재시도한다. 계약 위반, 허용되지 않은 경로·bucket, 지원하지 않는 preset, 유효하지 않은 출력은 영구 실패로 분류한다.

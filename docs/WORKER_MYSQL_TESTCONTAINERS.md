@@ -38,26 +38,30 @@ class ExampleIntegrationTest extends MySqlContainerSupport {
 - 전용 계정이 `onfilm_worker_app`인지 확인
 - 문자 집합과 Collation 확인
 - `media_encode_inbox` JPA Schema가 실제 MySQL에 생성되는지 확인
+- 빈 DB에서 Flyway V1 적용과 `flyway_schema_history` 확인
+- Hibernate `ddl-auto: validate`로 Entity·Schema 일치 확인
 - `job_id`가 Kafka·Callback 계약과 같은 `VARCHAR(36)`인지 확인
 - Inbox `payload`가 255바이트 제한의 `TINYTEXT`가 아닌 `TEXT`인지 확인
+- claim·복구용 Composite Index의 존재와 컬럼 순서 확인
 - 기존 Inbox 중복 메시지, lease 만료, Callback-only와 terminal 상태 장애 주입 테스트를 MySQL에서 실행
 
 최초 MySQL 실행에서는 `@Lob`만 선언한 `payload`가 `TINYTEXT`로 생성되어 실제 Kafka JSON 저장이 `Data too long for column 'payload'`로 실패했다. Entity Mapping에 `columnDefinition = "TEXT"`를 명시해 H2에서 발견하지 못했던 차이를 수정했고, 다음 V1도 같은 타입으로 작성한다.
 
 UUID 타입의 `job_id`는 `length = 36`만으로는 MySQL에서 `BINARY(36)`으로 생성됐다. 16바이트 UUID가 고정 길이로 패딩되면서 같은 ID의 잠금 조회가 행을 찾지 못하고 이어진 INSERT가 PK 중복으로 실패했다. `@JdbcTypeCode(SqlTypes.VARCHAR)`를 추가해 `VARCHAR(36)` 저장과 조회를 일치시켰으며 다음 V1에서도 이 표현을 유지한다.
 
-## Flyway 전환 전 임시 경계
+## Flyway와 Hibernate 역할
 
-이번 단계의 목적은 실제 MySQL 테스트 기반을 먼저 마련하는 것이다. Worker Flyway V1은 아직 추가하지 않았으므로 통합 테스트에서만 Hibernate `create-drop`으로 pending Inbox Schema를 생성한다.
+Worker MySQL Schema의 단일 기준은 `V1__create_initial_schema.sql`부터 시작하는 Flyway Versioned Migration이다. Hibernate는 공유 MySQL Schema를 생성하거나 변경하지 않고 `ddl-auto: validate`로 Entity Mapping과의 불일치만 탐지한다.
 
-다음 단계에서는 다음 순서로 이 임시 설정을 제거한다.
+통합 테스트는 다음 순서로 실행된다.
 
-1. `V1__create_initial_schema.sql` 작성
-2. 빈 `onfilm_worker`에 Flyway V1 적용
-3. 통합 테스트의 Hibernate 설정을 `validate`로 변경
-4. `flyway_schema_history`와 Entity·Schema 일치 검증
+1. Testcontainers가 빈 `onfilm_worker`를 시작한다.
+2. Flyway가 V1을 적용한다.
+3. Hibernate가 전체 Entity Mapping을 validate한다.
+4. Environment Test가 Migration 버전, 컬럼 타입과 Index 순서를 확인한다.
+5. Inbox 영속성·장애 시나리오를 실행한다.
 
-H2 또는 현재 `create-drop` 테스트 성공을 Flyway Migration 검증의 근거로 사용하지 않는다.
+`baselineOnMigrate`는 사용하지 않는다. 보존할 운영 데이터가 없는 정책에 따라 빈 DB에서 V1부터 재현한다. 개발 프로필의 메모리 H2는 빠른 로컬 확인을 위해 Flyway를 비활성화하고 Hibernate `create-drop`을 사용하지만, Schema 호환성의 증거로 사용하지 않는다.
 
 ## 실행
 

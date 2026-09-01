@@ -34,7 +34,10 @@ public abstract class MySqlContainerSupport {
         registry.add("spring.datasource.driver-class-name", MYSQL::getDriverClassName);
         registry.add("spring.jpa.database-platform", () -> "org.hibernate.dialect.MySQLDialect");
 
-        registry.add("spring.jpa.hibernate.ddl-auto", () -> "create-drop");
+        registry.add("spring.flyway.enabled", () -> "true");
+        registry.add("spring.flyway.baseline-on-migrate", () -> "false");
+        registry.add("spring.flyway.validate-migration-naming", () -> "true");
+        registry.add("spring.jpa.hibernate.ddl-auto", () -> "validate");
         registry.add("spring.jpa.defer-datasource-initialization", () -> "false");
         registry.add("spring.sql.init.mode", () -> "never");
     }
