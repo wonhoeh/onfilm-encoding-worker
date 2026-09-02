@@ -113,4 +113,5 @@ Worker DB에는 현재 `media_encode_inbox` Aggregate만 존재하며 JPA 연관
 
 - [Worker 신뢰성 결정](WORKER_RELIABILITY_DECISIONS.md)
 - [Worker MySQL Constraint 감사](WORKER_MYSQL_CONSTRAINT_AUDIT.md)
+- [Worker 주요 SQL Index 기준선](performance/mysql-index-baseline.md)
 - [Worker DB Schema 변경 규칙](../AGENTS.md)
