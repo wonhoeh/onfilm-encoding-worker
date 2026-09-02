@@ -54,8 +54,11 @@ class ExampleIntegrationTest extends MySqlContainerSupport {
 - `PESSIMISTIC_WRITE` 행 잠금이 첫 트랜잭션 commit까지 두 번째 커넥션을 대기시키는지 검증
 - 잘못된 횟수·시간·payload·lease·실패 상태 조합을 V2 CHECK가 거부하는지 검증
 - 여섯 Inbox 상태와 Callback 실패 후 `OUTPUT_UPLOADED` 변형의 정상 저장 검증
+- 두 최초 INSERT가 모두 사전 조회를 통과해도 `job_id` PK로 한 건만 commit되는지 검증
+- 동일 메시지 동시 Claim의 Duplicate Key·MySQL deadlock을 재시도해 `PROCESS`와 `BUSY`로 정리하는지 검증
+- 같은 version을 읽은 두 상태 변경 중 하나만 commit되고 다른 하나는 낙관적 락 충돌하는지 검증
 
-최초 MySQL 실행에서는 `@Lob`만 선언한 `payload`가 `TINYTEXT`로 생성되어 실제 Kafka JSON 저장이 `Data too long for column 'payload'`로 실패했다. Entity Mapping에 `columnDefinition = "TEXT"`를 명시해 H2에서 발견하지 못했던 차이를 수정했고, 다음 V1도 같은 타입으로 작성한다.
+최초 MySQL 실행에서는 `@Lob`만 선언한 `payload`가 `TINYTEXT`로 생성되어 실제 Kafka JSON 저장이 `Data too long for column 'payload'`로 실패했다. Entity Mapping에 `columnDefinition = "TEXT"`를 명시해 H2에서 발견하지 못했던 차이를 수정했고, V1도 같은 타입으로 유지한다.
 
 UUID 타입의 `job_id`는 `length = 36`만으로는 MySQL에서 `BINARY(36)`으로 생성됐다. 16바이트 UUID가 고정 길이로 패딩되면서 같은 ID의 잠금 조회가 행을 찾지 못하고 이어진 INSERT가 PK 중복으로 실패했다. `@JdbcTypeCode(SqlTypes.VARCHAR)`를 추가해 `VARCHAR(36)` 저장과 조회를 일치시켰으며 다음 V1에서도 이 표현을 유지한다.
 

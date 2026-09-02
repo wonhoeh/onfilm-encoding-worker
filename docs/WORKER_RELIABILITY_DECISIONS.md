@@ -16,6 +16,14 @@ Kafka 전달은 at-least-once이므로 같은 `jobId`가 다시 전달될 수 �
 
 이 방식은 DB 운영과 상태 정리 비용이 생기지만, 긴 인코딩을 중복 실행하거나 이미 업로드한 결과를 다시 만드는 비용을 줄인다.
 
+### Concurrent first delivery
+
+동일한 `jobId`가 처음부터 동시에 도착하면 두 트랜잭션이 모두 Inbox가 없다고 조회할 수 있다. `job_id` Primary Key가 최종적으로 한 INSERT만 commit시키며, Worker는 경쟁에서 패한 요청을 새 트랜잭션으로 한 번 다시 조회해 이미 처리 중인 `BUSY` 상태로 정리한다.
+
+MySQL에서는 존재하지 않는 동일 PK를 `SELECT ... FOR UPDATE`한 두 트랜잭션이 이어서 INSERT할 때 단순 Duplicate Key뿐 아니라 한쪽이 deadlock victim으로 선택될 수 있다. 따라서 Coordinator는 `DataIntegrityViolationException`과 MySQL deadlock이 변환된 `CannotAcquireLockException`을 같은 최초 생성 경쟁으로 취급해 한 번만 재시도한다. 재시도도 실패하면 상위 실패 정책으로 전달하며 무한 반복하지 않는다.
+
+기존 Inbox의 상태 변경은 짧은 `PESSIMISTIC_WRITE` 구간으로 직렬화한다. `@Version`은 잠금 없는 Repository 변경이나 잘못된 추가 쓰기 경로가 생겼을 때 stale update 두 건이 모두 성공하지 못하게 하는 보조 방어선이다. ffmpeg, S3와 Callback I/O는 이 잠금 트랜잭션 안에서 실행하지 않는다.
+
 ### Inbox Schema management
 
 Worker는 `onfilm_worker` 논리 DB와 `media_encode_inbox` 테이블만 소유한다. Schema의 단일 기준은 Flyway Versioned Migration이며, MySQL 환경에서 Hibernate는 `ddl-auto: validate`만 수행한다.
