@@ -149,6 +149,7 @@ docker rm -f onfilm-worker-index-baseline
 
 ## 관련 문서
 
+- [Worker 주요 SQL Index 유무 성능 비교](mysql-index-before-after-comparison.md)
 - [Worker MySQL Testcontainers 환경](../WORKER_MYSQL_TESTCONTAINERS.md)
 - [Worker MySQL Constraint 감사](../WORKER_MYSQL_CONSTRAINT_AUDIT.md)
 - [Worker 신뢰성 결정](../WORKER_RELIABILITY_DECISIONS.md)

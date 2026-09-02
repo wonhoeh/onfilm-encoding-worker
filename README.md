@@ -129,6 +129,6 @@ health check는 작업 디렉터리 쓰기 가능 여부, 가용 디스크 1 GiB
 ./gradlew check
 ```
 
-DB 동작이 중요한 통합 테스트는 [MySQL Testcontainers 환경](docs/WORKER_MYSQL_TESTCONTAINERS.md)에서 실행합니다. 빈 `onfilm_worker`에 Flyway Migration을 적용하고 Hibernate `validate`로 Inbox Mapping을 검증합니다. Unique·Nullable·FK와 상태 조합의 판단 근거는 [Worker MySQL Constraint 감사](docs/WORKER_MYSQL_CONSTRAINT_AUDIT.md)에 기록합니다. 주요 Inbox SQL의 실행 계획과 Composite Index 컬럼 순서의 근거는 [MySQL Index 기준선](docs/performance/mysql-index-baseline.md)에서 확인할 수 있습니다.
+DB 동작이 중요한 통합 테스트는 [MySQL Testcontainers 환경](docs/WORKER_MYSQL_TESTCONTAINERS.md)에서 실행합니다. 빈 `onfilm_worker`에 Flyway Migration을 적용하고 Hibernate `validate`로 Inbox Mapping을 검증합니다. Unique·Nullable·FK와 상태 조합의 판단 근거는 [Worker MySQL Constraint 감사](docs/WORKER_MYSQL_CONSTRAINT_AUDIT.md)에 기록합니다. 주요 Inbox SQL의 실행 계획과 Composite Index 컬럼 순서의 근거는 [MySQL Index 기준선](docs/performance/mysql-index-baseline.md), 기존 Index의 효과는 [Index 유무 성능 비교](docs/performance/mysql-index-before-after-comparison.md)에서 확인할 수 있습니다.
 
 Pull Request와 `main`, `test` 브랜치 Push에서는 [Worker CI](.github/workflows/worker-ci.yml)가 단위 테스트와 MySQL 통합 테스트를 별도 Job으로 병렬 실행합니다. 테스트가 실패하면 해당 Gradle 보고서를 7일간 Artifact로 보관합니다.
