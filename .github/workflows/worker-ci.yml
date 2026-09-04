@@ -176,7 +176,21 @@ jobs:
 
           release_path=$1
           current_path=/opt/onfilm-worker/current.jar
-          previous_path=$(readlink -f "$current_path" || true)
+          previous_path=
+
+          if [ ! -f "$release_path" ]; then
+            echo "Release JAR does not exist: ${release_path}" >&2
+            exit 1
+          fi
+
+          if [ -L "$current_path" ]; then
+            resolved_current_path=$(readlink -f "$current_path" || true)
+            if [ -n "$resolved_current_path" ] \
+              && [ "$resolved_current_path" != "$current_path" ] \
+              && [ -f "$resolved_current_path" ]; then
+              previous_path=$resolved_current_path
+            fi
+          fi
 
           ln -sfn "$release_path" "$current_path"
           systemctl enable onfilm-worker
@@ -198,6 +212,10 @@ jobs:
             echo "Rolling back to ${previous_path}" >&2
             ln -sfn "$previous_path" "$current_path"
             systemctl restart onfilm-worker
+          else
+            echo "No previous healthy release is available; stopping Worker" >&2
+            systemctl stop onfilm-worker || true
+            rm -f "$current_path"
           fi
 
           exit 1
