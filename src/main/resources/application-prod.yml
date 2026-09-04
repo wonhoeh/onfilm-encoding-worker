@@ -1,0 +1,16 @@
+spring:
+  kafka:
+    bootstrap-servers: ${SPRING_KAFKA_BOOTSTRAP_SERVERS}
+
+app:
+  worker:
+    topic: media.encode.requested
+    group-id: onfilm-encoding-worker
+    ffmpeg-path: ${APP_WORKER_FFMPEG_PATH:/usr/bin/ffmpeg}
+    ffprobe-path: ${APP_WORKER_FFPROBE_PATH:/usr/bin/ffprobe}
+    working-dir: ${APP_WORKER_WORKING_DIR:/var/lib/onfilm-worker/work}
+  storage:
+    type: s3
+    region: ${APP_STORAGE_REGION:ap-northeast-2}
+  core-api:
+    base-url: ${APP_CORE_API_BASE_URL}
